@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: animall-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SEED_ON_START
+        value: true

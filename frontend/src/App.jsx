@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getSession, setSession } from './api';
 
-const TABS = ['Productos', 'Categorías', 'Ventas', 'Clientes', 'Historial'];
+const TABS = ['Productos', 'Ventas', 'Historial', 'Clientes', 'Categorías'];
 
 export default function App() {
   const [tab, setTab] = useState('Productos');
@@ -99,6 +99,10 @@ function useLoad(fn, deps = []) {
 
 function Err({ e }) { return e ? <p className="err">{e}</p> : null; }
 
+function Field({ label, hint, className, children }) {
+  return <label className={'field' + (className ? ' ' + className : '')}><span>{label}{hint && <small> — {hint}</small>}</span>{children}</label>;
+}
+
 function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
   return (
@@ -143,7 +147,6 @@ function Productos({ isAdmin }) {
   const [open, setOpen] = useState(false);
   const [editProd, setEditProd] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const [stockProd, setStockProd] = useState(null);
   const [stockCant, setStockCant] = useState(1);
   const [stockErr, setStockErr] = useState('');
 
@@ -151,17 +154,18 @@ function Productos({ isAdmin }) {
     setStockErr('');
     const n = Number(stockCant);
     if (!Number.isInteger(n) || n <= 0) { setStockErr('Ingresá una cantidad entera mayor a 0.'); return; }
-    try { await api.ingreso(stockProd.id, n); setStockProd(null); load(); }
+    try { await api.ingreso(editProd.id, n); setEditProd({ ...editProd, stock: editProd.stock + n }); setStockCant(1); load(); }
     catch (e) { setStockErr(e.message); }
   };
 
   const openEdit = (p) => {
     setEditProd(p);
+    setStockCant(1); setStockErr('');
     setEditForm({
       nombre: p.nombre, marca: p.marca || '', descripcion: p.descripcion || '',
       unidad: p.unidad, precio_costo: p.precio_costo, precio_venta: p.precio_venta,
       stock_minimo: p.stock_minimo, imagen_url: p.imagen_url || '', sku: p.sku || '',
-      activo: p.activo, categoria_ids: (p.categorias || []).map(c => c.id),
+      categoria_ids: (p.categorias || []).map(c => c.id),
     });
   };
   const guardarEdit = async () => {
@@ -170,11 +174,16 @@ function Productos({ isAdmin }) {
       await api.patchProd(editProd.id, payload); setEditProd(null); load();
     } catch (e) { alert(e.message); }
   };
+  const eliminarProd = async () => {
+    if (!confirm(`Eliminar "${editProd.nombre}"? Solo es posible si no tiene ventas.`)) return;
+    try { await api.deleteProd(editProd.id); setEditProd(null); load(); }
+    catch (e) { alert(e.message); }
+  };
 
   const loadCats = async () => setAllCats(await api.cats().catch(() => []));
   const load = async () => {
     setErr('');
-    try { setItems(await api.prods({ search: search || undefined, categoria: cat || undefined, stock_bajo: bajo || undefined })); }
+    try { setItems(await api.prods({ search: search || undefined, categoria: cat || undefined, stock_bajo: bajo || undefined, solo_activos: true })); }
     catch (e) { setErr(e.message); }
   };
   useEffect(() => { loadCats(); load(); }, []);
@@ -194,68 +203,70 @@ function Productos({ isAdmin }) {
       <label><input type="checkbox" checked={bajo} onChange={e => setBajo(e.target.checked)} /> stock bajo</label>
       <button onClick={load}>Filtrar</button>
     </div>
-    <table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Activo</th><th>Acciones</th></tr></thead>
+    <table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody>{items.map(p => <tr key={p.id} className={p.stock_bajo ? 'bajo' : ''}>
         <td>{p.sku || '-'}</td><td>{p.nombre} ({p.marca || '-'})</td><td>${p.precio_venta}</td>
         <td>{p.stock} (mín {p.stock_minimo})</td><td>{(p.categorias || []).length ? (p.categorias || []).map(c => c.nombre).join(', ') : <span className="sin-cat">Sin categoría</span>}</td>
-        <td>{p.activo ? 'sí' : 'no'}</td>
-        <td>
-          <button onClick={() => { setStockProd(p); setStockCant(1); setStockErr(''); }}>+stock</button>
-          <button onClick={() => openEdit(p)}>editar</button>
-          <button onClick={async () => { try { await api.patchProd(p.id, { activo: !p.activo }); load(); } catch (e) { alert(e.message); } }}>{p.activo ? 'desactivar' : 'activar'}</button>
-          {isAdmin && <button onClick={async () => { if (confirm(`Eliminar "${p.nombre}"? Solo si no tiene ventas.`)) { try { await api.deleteProd(p.id); load(); } catch (e) { alert(e.message); } } }}>eliminar</button>}
-        </td></tr>)}
+        <td>{p.stock === 0 ? <span className="badge out">Sin stock</span> : <span className="badge ok">Disponible</span>}</td>
+        <td><button onClick={() => openEdit(p)}>editar</button></td></tr>)}
       </tbody></table>
-    <Modal open={!!stockProd} onClose={() => setStockProd(null)} title={stockProd ? `Ingresar stock · ${stockProd.nombre}` : 'Ingresar stock'}>
-      <p className="muted">Stock actual: {stockProd?.stock}</p>
-      <input type="number" min="1" step="1" value={stockCant} onChange={e => setStockCant(e.target.value)} placeholder="Cantidad" />
-      {stockErr && <p className="err">{stockErr}</p>}
-      <div className="modal-actions"><button className="ghost" onClick={() => setStockProd(null)}>Cancelar</button><button onClick={guardarStock}>Guardar</button></div>
-    </Modal>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo producto" wide>
       <div className="grid">
-        <input placeholder="SKU" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} />
-        <input placeholder="Nombre*" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
-        <input placeholder="Marca" value={form.marca} onChange={e => setForm({ ...form, marca: e.target.value })} />
-        <select value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select>
-        <input type="number" placeholder="Costo" value={form.precio_costo} onChange={e => setForm({ ...form, precio_costo: e.target.value })} />
-        <input type="number" placeholder="Venta*" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} />
-        <input type="number" placeholder="Stock" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
-        <input type="number" placeholder="Mín" value={form.stock_minimo} onChange={e => setForm({ ...form, stock_minimo: e.target.value })} />
-        <input placeholder="imagen URL" value={form.imagen_url} onChange={e => setForm({ ...form, imagen_url: e.target.value })} />
-        <input placeholder="Descripción" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} />
+        <Field label="SKU" hint="Código único del producto, opcional"><input placeholder="Ej: RC-MINI-3KG" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></Field>
+        <Field label="Nombre*" hint="Nombre visible en listados y ventas"><input placeholder="Ej: Royal Canin Mini 3kg" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} /></Field>
+        <Field label="Marca" hint="Marca o laboratorio"><input placeholder="Ej: Royal Canin" value={form.marca} onChange={e => setForm({ ...form, marca: e.target.value })} /></Field>
+        <Field label="Unidad" hint="Cómo se vende y descuenta el stock"><select value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
+        <Field label="Costo" hint="Precio de compra, solo referencia interna"><input type="number" placeholder="0" value={form.precio_costo} onChange={e => setForm({ ...form, precio_costo: e.target.value })} /></Field>
+        <Field label="Venta*" hint="Precio al público que se cobra"><input type="number" placeholder="100" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} /></Field>
+        <Field label="Stock" hint="Unidades iniciales disponibles"><input type="number" placeholder="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></Field>
+        <Field label="Mín" hint="Avisa stock bajo al llegar a este nivel"><input type="number" placeholder="10" value={form.stock_minimo} onChange={e => setForm({ ...form, stock_minimo: e.target.value })} /></Field>
+        <Field label="Imagen URL" hint="Link http(s) de foto, opcional"><input placeholder="https://..." value={form.imagen_url} onChange={e => setForm({ ...form, imagen_url: e.target.value })} /></Field>
+        <Field label="Descripción" hint="Detalle largo del producto"><input placeholder="Ej: Alimento para perro adulto" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías (opcional, puede quedar Sin categoría): {allCats.map(c => <label key={c.id}><input type="checkbox" checked={form.categoria_ids.includes(c.id)} onChange={e => setForm({ ...form, categoria_ids: e.target.checked ? [...form.categoria_ids, c.id] : form.categoria_ids.filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={crear}>Guardar</button></div>
     </Modal>
     <Modal open={!!editProd} onClose={() => setEditProd(null)} title={editProd ? `Editar · ${editProd.nombre}` : 'Editar'} wide>
       <div className="grid">
-        <input placeholder="SKU" value={editForm.sku || ''} onChange={e => setEditForm({ ...editForm, sku: e.target.value })} />
-        <input placeholder="Nombre*" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} />
-        <input placeholder="Marca" value={editForm.marca || ''} onChange={e => setEditForm({ ...editForm, marca: e.target.value })} />
-        <select value={editForm.unidad || 'unidad'} onChange={e => setEditForm({ ...editForm, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select>
-        <input type="number" placeholder="Costo" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} />
-        <input type="number" placeholder="Venta*" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} />
-        <input type="number" placeholder="Mín" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} />
-        <input placeholder="imagen URL" value={editForm.imagen_url || ''} onChange={e => setEditForm({ ...editForm, imagen_url: e.target.value })} />
-        <input placeholder="Descripción" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} />
-        <label><input type="checkbox" checked={!!editForm.activo} onChange={e => setEditForm({ ...editForm, activo: e.target.checked })} /> activo</label>
+        <Field label="SKU" hint="Código único del producto, opcional"><input placeholder="Ej: RC-MINI-3KG" value={editForm.sku || ''} onChange={e => setEditForm({ ...editForm, sku: e.target.value })} /></Field>
+        <Field label="Nombre*" hint="Nombre visible en listados y ventas"><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} /></Field>
+        <Field label="Marca" hint="Marca o laboratorio"><input placeholder="Ej: Royal Canin" value={editForm.marca || ''} onChange={e => setEditForm({ ...editForm, marca: e.target.value })} /></Field>
+        <Field label="Unidad" hint="Cómo se vende y descuenta el stock"><select value={editForm.unidad || 'unidad'} onChange={e => setEditForm({ ...editForm, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
+        <Field label="Costo" hint="Precio de compra, solo referencia interna"><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} /></Field>
+        <Field label="Venta*" hint="Precio al público que se cobra"><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} /></Field>
+        <Field label="Mín" hint="Avisa stock bajo al llegar a este nivel"><input type="number" placeholder="10" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} /></Field>
+        <Field label="Imagen URL" hint="Link http(s) de foto, opcional"><input placeholder="https://..." value={editForm.imagen_url || ''} onChange={e => setEditForm({ ...editForm, imagen_url: e.target.value })} /></Field>
+        <Field label="Descripción" hint="Detalle largo del producto"><input placeholder="Ej: Alimento para perro adulto" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías (vacío = Sin categoría): {allCats.map(c => <label key={c.id}><input type="checkbox" checked={(editForm.categoria_ids || []).includes(c.id)} onChange={e => setEditForm({ ...editForm, categoria_ids: e.target.checked ? [...(editForm.categoria_ids || []), c.id] : (editForm.categoria_ids || []).filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
-      <div className="modal-actions"><button className="ghost" onClick={() => setEditProd(null)}>Cancelar</button><button onClick={guardarEdit}>Guardar cambios</button></div>
+      <div className="stock-box">
+        <b>Stock actual: {editProd?.stock}</b>
+        <div className="row">
+          <input type="number" min="1" step="1" value={stockCant} onChange={e => setStockCant(e.target.value)} placeholder="Cantidad a ingresar" />
+          <button onClick={guardarStock}>Ingresar stock</button>
+        </div>
+        {stockErr && <p className="err">{stockErr}</p>}
+        <p className="muted small">Suma unidades al stock y lo registra en Historial como ingreso de mercadería.</p>
+      </div>
+      <div className="modal-actions">
+        {isAdmin && <button className="danger" onClick={eliminarProd}>Eliminar</button>}
+        <span style={{ flex: 1 }} />
+        <button className="ghost" onClick={() => setEditProd(null)}>Cancelar</button>
+        <button onClick={guardarEdit}>Guardar cambios</button>
+      </div>
     </Modal>
   </section>;
 }
 
 /* ---------- Ventas ---------- */
 function Ventas() {
+  const hoy = new Date().toISOString().slice(0, 10);
   const [clientes, setClientes] = useState([]); const [prods, setProds] = useState([]); const [pedidos, setPedidos] = useState([]);
   const [err, setErr] = useState('');
   const [f, setF] = useState({ cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 });
   const [lineas, setLineas] = useState([{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }]);
-  const [open, setOpen] = useState(false);
   const load = async () => {
-    try { setClientes(await api.clientes()); setProds(await api.prods()); setPedidos(await api.pedidos()); }
+    try { setClientes(await api.clientes()); setProds(await api.prods()); setPedidos(await api.pedidos(hoy)); }
     catch (e) { setErr(e.message); }
   };
   useEffect(() => { load(); }, []);
@@ -268,35 +279,43 @@ function Ventas() {
     if (lineas.some(l => !l.producto_id)) { alert('Hay líneas sin producto'); return; }
     try {
       const r = await api.createPedido({ cliente_id: +f.cliente_id, metodo_pago: f.metodo_pago, descuento_tipo: f.descuento_tipo, descuento_valor: +f.descuento_valor, detalles: lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, descuento_tipo: l.descuento_tipo, descuento_valor: +l.descuento_valor })) });
-      alert(`Pedido ${r.id} total $${r.total}`); setOpen(false); resetPedido(); load();
+      alert(`Venta #${r.id} registrada · total $${r.total}`); resetPedido(); load();
     } catch (e) { alert(e.message); }
   };
+  const cliNombre = (id) => (clientes.find(c => c.id === id) || {}).nombre || `cli ${id}`;
+  const cancelar = async (p) => {
+    if (!confirm(`Cancelar venta #${p.id}? Se devuelve el stock.`)) return;
+    try { await api.cancelarPedido(p.id); load(); } catch (e) { alert(e.message); }
+  };
   return <section>
-    <div className="sec-head"><h2>Ventas / Pedidos</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo pedido</button></div>
+    <div className="sec-head"><h2>Ventas · Hoy</h2></div>
     <Err e={err} />
-    <Modal open={open} onClose={() => setOpen(false)} title="Nuevo pedido" wide>
+    <div className="sale-box">
+      <h3>Registrar venta</h3>
       <div className="row">
-        <select value={f.cliente_id} onChange={e => setF({ ...f, cliente_id: e.target.value })}><option value="">Cliente...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select>
-        <select value={f.metodo_pago} onChange={e => setF({ ...f, metodo_pago: e.target.value })}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option></select>
-        <select value={f.descuento_tipo} onChange={e => setF({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select>
-        <input type="number" value={f.descuento_valor} onChange={e => setF({ ...f, descuento_valor: e.target.value })} />
+        <Field label="Cliente" hint="A quién se le vende"><select value={f.cliente_id} onChange={e => setF({ ...f, cliente_id: e.target.value })}><option value="">Cliente...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></Field>
+        <Field label="Método de pago" hint="Cómo paga la venta"><select value={f.metodo_pago} onChange={e => setF({ ...f, metodo_pago: e.target.value })}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option></select></Field>
+        <Field label="Descuento del pedido" hint="Se aplica al total"><select value={f.descuento_tipo} onChange={e => setF({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
+        <Field label="Valor del descuento" hint="Si no hay dto, 0"><input type="number" value={f.descuento_valor} onChange={e => setF({ ...f, descuento_valor: e.target.value })} /></Field>
       </div>
-      {lineas.map((l, i) => <div className="row" key={i}>
-        <select value={l.producto_id} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, producto_id: e.target.value } : x))}><option value="">Producto...</option>{prods.filter(p => p.activo).map(p => <option key={p.id} value={p.id}>{p.nombre} (stock {p.stock})</option>)}</select>
-        <input type="number" min="1" value={l.cantidad} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} />
-        <select value={l.descuento_tipo} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select>
-        <input type="number" value={l.descuento_valor} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} />
-        <button onClick={() => setLineas(lineas.filter((_, j) => j !== i))}>-</button>
+      {lineas.map((l, i) => <div className="line" key={i}>
+        <Field className="lp" label="Producto" hint="Solo disponibles"><select value={l.producto_id} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, producto_id: e.target.value } : x))}><option value="">Producto...</option>{prods.filter(p => p.activo).map(p => <option key={p.id} value={p.id}>{p.nombre} (stock {p.stock})</option>)}</select></Field>
+        <Field className="lc" label="Cantidad" hint="Unidades"><input type="number" min="1" value={l.cantidad} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} /></Field>
+        <Field className="ld" label="Descuento" hint="De esta línea"><select value={l.descuento_tipo} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
+        <Field className="lv" label="Valor" hint="Del dto línea"><input type="number" value={l.descuento_valor} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} /></Field>
+        <button className="ghost" title="Quitar línea" onClick={() => setLineas(lineas.filter((_, j) => j !== i))}>-</button>
       </div>)}
       <div className="modal-actions">
         <button className="ghost" onClick={() => setLineas([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>+ línea</button>
         <span style={{ flex: 1 }} />
-        <button className="ghost" onClick={() => setOpen(false)}>Cancelar</button>
-        <button onClick={submit}>Guardar pedido</button>
+        <button onClick={submit}>Guardar venta</button>
       </div>
-    </Modal>
-    <h3>Pedidos</h3>
-    <ul>{pedidos.map(p => <li key={p.id}>#{p.id} cli {p.cliente_id} ${p.total} {p.estado} {p.metodo_pago} {p.estado === 'pagado' && <button onClick={async () => { if (confirm(`Cancelar pedido #${p.id}? Se devuelve el stock.`)) { try { await api.cancelarPedido(p.id); load(); } catch (e) { alert(e.message); } } }}>cancelar</button>}</li>)}</ul>
+    </div>
+    <h3>Ventas de hoy</h3>
+    {pedidos.length === 0 ? <p className="muted">Todavía no hay ventas hoy.</p> :
+      <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {cliNombre(p.cliente_id)} · ${p.total} · {p.estado} · {p.metodo_pago}<br />
+        <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small>
+        {p.estado === 'pagado' && <button onClick={() => cancelar(p)}>cancelar</button>}</li>)}</ul>}
   </section>;
 }
 
@@ -305,8 +324,8 @@ function Clientes() {
   const { data, err, reload } = useLoad(api.clientes);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
+  const [q, setQ] = useState('');
   const [selId, setSelId] = useState(null);
-  const [selNombre, setSelNombre] = useState('');
   const [peds, setPeds] = useState([]);
   const [page, setPage] = useState(0);
   const [detId, setDetId] = useState(null); // pedido con detalle desplegado
@@ -316,7 +335,7 @@ function Clientes() {
     if (selId === c.id) { setSelId(null); setPeds([]); setDetId(null); return; } // esconder al segundo clic
     try {
       const list = await api.pedidosCliente(c.id);
-      setSelId(c.id); setSelNombre(c.nombre); setPeds(list); setPage(0); setDetId(null);
+      setSelId(c.id); setPeds(list); setPage(0); setDetId(null);
     } catch (e) { alert(e.message); }
   };
   const dtoTxt = (t, v) => t === 'ningun' ? 'sin dto' : t === 'porcentaje' ? `${v}%` : `$${v}`;
@@ -325,51 +344,74 @@ function Clientes() {
     const d = new Date(f);
     return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+  const norm = (s) => (s || '').toLowerCase();
+  const rows = (data || []).filter(c => {
+    const t = norm(q.trim());
+    if (!t) return true;
+    return norm(c.nombre).includes(t) || norm(c.email).includes(t) || norm(c.dni).includes(t);
+  });
   const totalPages = Math.max(1, Math.ceil(peds.length / PAGE));
   const view = peds.slice(page * PAGE, page * PAGE + PAGE);
+
+  const pedsBlock = (
+    <div className="peds">
+      {peds.length === 0
+        ? <p className="muted">Este cliente todavía no tiene pedidos.</p>
+        : <>
+          <ul>{view.map(p => <li key={p.id}>
+            <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {p.metodo_pago}
+            <button onClick={() => setDetId(detId === p.id ? null : p.id)}>{detId === p.id ? 'ocultar detalle' : 'ver detalle'}</button>
+            {detId === p.id && (
+              <div className="det">
+                {(p.detalles || []).map(d => <div key={d.id} className="det-line">
+                  <span>{d.nombre_snapshot} x{d.cantidad} @ ${d.precio_unitario}</span>
+                  <span className="muted">dto: {dtoTxt(d.descuento_tipo, d.descuento_valor)} → ${d.subtotal_linea}</span>
+                </div>)}
+                <div className="det-total">
+                  <span>Subtotal: ${p.subtotal} · Dto pedido: {dtoTxt(p.descuento_tipo, p.descuento_valor)}</span>
+                  <b>Total: ${p.total} ARS</b>
+                </div>
+              </div>
+            )}
+          </li>)}</ul>
+          {peds.length > PAGE && (
+            <div className="pager">
+              <button className="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>‹ Nuevos</button>
+              <span>{page + 1} / {totalPages}</span>
+              <button className="ghost" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Anteriores ›</button>
+            </div>
+          )}
+        </>}
+    </div>
+  );
 
   return <section>
     <div className="sec-head"><h2>Clientes</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
+    <div className="row">
+      <input placeholder="Buscar nombre, email o DNI" value={q} onChange={e => setQ(e.target.value)} />
+    </div>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo cliente">
-      <div className="grid">{['nombre', 'email', 'telefono', 'dni', 'direccion'].map(k => <input key={k} placeholder={k} value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} />)}</div>
+      <div className="grid">
+        <Field label="Nombre" hint="Nombre y apellido del cliente"><input placeholder="Ej: Martina López" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
+        <Field label="Email" hint="Email único, identifica al cliente"><input placeholder="Ej: martina@mail.com" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} /></Field>
+        <Field label="Teléfono" hint="Teléfono de contacto, opcional"><input placeholder="Ej: 351-2345678" value={f.telefono} onChange={e => setF({ ...f, telefono: e.target.value })} /></Field>
+        <Field label="DNI" hint="DNI único del cliente"><input placeholder="Ej: 30123456" value={f.dni} onChange={e => setF({ ...f, dni: e.target.value })} /></Field>
+        <Field label="Dirección" hint="Dirección, opcional"><input placeholder="Ej: Av Colón 1234" value={f.direccion} onChange={e => setF({ ...f, direccion: e.target.value })} /></Field>
+      </div>
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { try { await api.createCliente(f); setF({ nombre: '', email: '', telefono: '', dni: '', direccion: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
-    <ul>{(data || []).map(c => <li key={c.id}>
-      {c.nombre} {c.email} DNI {c.dni}
-      <button onClick={() => toggle(c)}>{selId === c.id ? 'ocultar' : 'ver pedidos'}</button>
-      {selId === c.id && (
-        <div className="peds">
-          {peds.length === 0
-            ? <p className="muted">Este cliente todavía no tiene pedidos.</p>
-            : <>
-              <ul>{view.map(p => <li key={p.id}>
-                <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {p.metodo_pago}
-                <button onClick={() => setDetId(detId === p.id ? null : p.id)}>{detId === p.id ? 'ocultar detalle' : 'ver detalle'}</button>
-                {detId === p.id && (
-                  <div className="det">
-                    {(p.detalles || []).map(d => <div key={d.id} className="det-line">
-                      <span>{d.nombre_snapshot} x{d.cantidad} @ ${d.precio_unitario}</span>
-                      <span className="muted">dto: {dtoTxt(d.descuento_tipo, d.descuento_valor)} → ${d.subtotal_linea}</span>
-                    </div>)}
-                    <div className="det-total">
-                      <span>Subtotal: ${p.subtotal} · Dto pedido: {dtoTxt(p.descuento_tipo, p.descuento_valor)}</span>
-                      <b>Total: ${p.total} ARS</b>
-                    </div>
-                  </div>
-                )}
-              </li>)}</ul>
-              {peds.length > PAGE && (
-                <div className="pager">
-                  <button className="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>‹ Nuevos</button>
-                  <span>{page + 1} / {totalPages}</span>
-                  <button className="ghost" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Anteriores ›</button>
-                </div>
-              )}
-            </>}
-        </div>
-      )}
-    </li>)}</ul>
+    <table><thead><tr><th>Nombre</th><th>Email</th><th>DNI</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
+      {rows.map(c => <tbody key={c.id}>
+        <tr>
+          <td>{c.nombre}</td><td>{c.email}</td><td>{c.dni}</td>
+          <td>{c.telefono || '-'}</td><td>{c.direccion || '-'}</td>
+          <td><button onClick={() => toggle(c)}>{selId === c.id ? 'ocultar' : 'ver pedidos'}</button></td>
+        </tr>
+        {selId === c.id && <tr><td colSpan={6}>{pedsBlock}</td></tr>}
+      </tbody>)}
+    </table>
+    {rows.length === 0 && <p className="muted">Sin clientes para este filtro.</p>}
   </section>;
 }
 
@@ -402,7 +444,9 @@ function Stock() {
   const fmt = (f) => (f || '').slice(11, 16);
 
   return <section>
-    <div className="sec-head"><h2>Historial del día</h2><button className="fab" onClick={() => { setDia(hoy); load(hoy); }}>Hoy</button></div>
+    <div className="sec-head"><h2>{dia === hoy ? 'Historial · Hoy' : `Historial · ${dia}`}</h2>{dia === hoy
+      ? <button className="fab" disabled>Hoy</button>
+      : <button className="fab" onClick={() => { setDia(hoy); load(hoy); }}>‹ Volver a hoy</button>}</div>
     <Err e={err} />
     <div className="row day-picker">
       <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
@@ -418,7 +462,7 @@ function Stock() {
     </div>
     <div className="cols">
       <div>
-        <h3>Ventas del {dia}</h3>
+        <h3>{dia === hoy ? 'Ventas de hoy' : `Ventas del ${dia}`}</h3>
         {pedidos.length === 0 ? <p className="muted">Sin movimientos este día.</p> :
           <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {p.estado} · ${p.total} · {p.metodo_pago}<br />
             <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small></li>)}</ul>}

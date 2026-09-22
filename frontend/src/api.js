@@ -53,6 +53,7 @@ export const api = {
     if (p.categoria) q.set('categoria', p.categoria);
     if (p.search) q.set('search', p.search);
     if (p.stock_bajo) q.set('stock_bajo', 'true');
+    if (p.solo_activos) q.set('solo_activos', 'true');
     const s = q.toString();
     return req(`/productos${s ? `?${s}` : ''}`);
   },

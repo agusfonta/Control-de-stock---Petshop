@@ -19,18 +19,8 @@ export default function App() {
   return (
     <div className="wrap">
       <header className="brand">
-        <div className="logo-circle">
-          <svg width="44" height="44" viewBox="0 0 48 48" fill="none">
-            <path d="M6 14h26l-5 16H11L6 14z" stroke="#23272a" strokeWidth="2.6" strokeLinejoin="round" fill="none"/>
-            <circle cx="14" cy="38" r="3" fill="#23272a"/><circle cx="26" cy="38" r="3" fill="#23272a"/>
-            <g fill="#15a092">
-              <ellipse cx="33" cy="10" rx="3.4" ry="4.2"/>
-              <circle cx="27" cy="7" r="2"/><circle cx="31.5" cy="4.6" r="2"/><circle cx="36" cy="5" r="2"/><circle cx="39" cy="8.4" r="2"/>
-            </g>
-          </svg>
-        </div>
+        <img src="/logo.png" alt="AniMall" className="logo-img" />
         <div>
-          <h1><span className="ani">ANI</span><span className="mall">Mall</span></h1>
           <p>Alimentos · Snacks · Accesorios — panel de stock y ventas</p>
         </div>
         <span className="user-chip" title="Cambiar contraseña" onClick={() => { setPc({ current: '', next: '' }); setPassOpen(true); }} style={{ cursor: 'pointer' }}>🔒 {session.username} · {session.rol}</span>
@@ -67,17 +57,7 @@ function Login({ onOk }) {
   return (
     <div className="wrap login-wrap">
       <form className="login-card" onSubmit={go}>
-        <div className="logo-circle lg">
-          <svg width="52" height="52" viewBox="0 0 48 48" fill="none">
-            <path d="M6 14h26l-5 16H11L6 14z" stroke="#23272a" strokeWidth="2.6" strokeLinejoin="round" fill="none"/>
-            <circle cx="14" cy="38" r="3" fill="#23272a"/><circle cx="26" cy="38" r="3" fill="#23272a"/>
-            <g fill="#15a092">
-              <ellipse cx="33" cy="10" rx="3.4" ry="4.2"/>
-              <circle cx="27" cy="7" r="2"/><circle cx="31.5" cy="4.6" r="2"/><circle cx="36" cy="5" r="2"/><circle cx="39" cy="8.4" r="2"/>
-            </g>
-          </svg>
-        </div>
-        <h1><span className="ani">ANI</span><span className="mall">Mall</span></h1>
+        <img src="/logo.png" alt="AniMall" className="logo-img lg" />
         <p className="muted">Ingresá para gestionar stock y ventas</p>
         <input placeholder="Usuario" value={u} onChange={e => setU(e.target.value)} autoFocus />
         <input placeholder="Contraseña" type="password" value={p} onChange={e => setP(e.target.value)} />

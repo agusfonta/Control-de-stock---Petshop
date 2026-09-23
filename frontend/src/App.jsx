@@ -3,6 +3,13 @@ import { api, getSession, setSession } from './api';
 
 const TABS = ['Productos', 'Ventas', 'Historial', 'Clientes', 'Categorías'];
 
+// Estado de Ventas fuera del componente para persistir entre cambios de pestaña
+const ventasState = {
+  f: { cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 },
+  lineas: [{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }],
+  clienteQuery: '',
+};
+
 export default function App() {
   const [tab, setTab] = useState('Productos');
   const [session, setSess] = useState(getSession);
@@ -229,11 +236,11 @@ function Productos({ isAdmin }) {
     <Modal open={!!editProd} onClose={() => setEditProd(null)} title={editProd ? `Editar · ${editProd.nombre}` : 'Editar'} wide>
       <div className="grid">
         <Field label="Codigo"><input placeholder="Ej: RC-MINI-3KG" value={editForm.sku || ''} onChange={e => setEditForm({ ...editForm, sku: e.target.value })} /></Field>
-        <Field label="Nombre*"><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} /></Field>
+        <Field label="Nombre"><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} /></Field>
         <Field label="Marca"><input placeholder="Ej: Royal Canin" value={editForm.marca || ''} onChange={e => setEditForm({ ...editForm, marca: e.target.value })} /></Field>
         <Field label="Unidad"><select value={editForm.unidad || 'unidad'} onChange={e => setEditForm({ ...editForm, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
         <Field label="Costo" hint="Precio al costo"><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} /></Field>
-        <Field label="Venta*" hint="Precio al público"><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} /></Field>
+        <Field label="Venta" hint="Precio al público"><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} /></Field>
         <Field label="Mín" hint="Avisa stock bajo al llegar a este minimo"><input type="number" placeholder="10" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} /></Field>
         <Field label="Imagen URL" hint="Foto opcional"><input placeholder="https://..." value={editForm.imagen_url || ''} onChange={e => setEditForm({ ...editForm, imagen_url: e.target.value })} /></Field>
         <Field label="Descripción"><input placeholder="Ej: Alimento para perro adulto" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></Field>
@@ -311,14 +318,20 @@ function Ventas() {
   const [prods, setProds] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const [err, setErr] = useState('');
-  const [f, setF] = useState({ cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 });
-  const [lineas, setLineas] = useState([{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }]);
 
-  // Task 1: autocompletado de clientes
-  const [clienteQuery, setClienteQuery] = useState('');
+  // Persistir estado del formulario entre cambios de pestaña usando objeto externo
+  const [f, setF] = useState(() => ventasState.f);
+  const [lineas, setLineas] = useState(() => ventasState.lineas);
+  const [clienteQuery, setClienteQuery] = useState(() => ventasState.clienteQuery);
+
+  // Sincronizar con ventasState en cada cambio
+  const setFP = v => { const val = typeof v === 'function' ? v(f) : v; ventasState.f = val; setF(val); };
+  const setLineasP = v => { const val = typeof v === 'function' ? v(lineas) : v; ventasState.lineas = val; setLineas(val); };
+  const setClienteQueryP = v => { ventasState.clienteQuery = v; setClienteQuery(v); };
+
   const [clienteOpen, setClienteOpen] = useState(false);
 
-  // Task 2: formulario inline de nuevo cliente
+  // Modal nuevo cliente
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
   const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
   const [nuevoClienteErr, setNuevoClienteErr] = useState('');
@@ -332,9 +345,11 @@ function Ventas() {
   useEffect(() => { load(); }, []);
 
   const resetPedido = () => {
-    setF({ cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 });
-    setLineas([{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }]);
-    setClienteQuery('');
+    const fInit = { cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 };
+    const lineasInit = [{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }];
+    ventasState.f = fInit; setF(fInit);
+    ventasState.lineas = lineasInit; setLineas(lineasInit);
+    ventasState.clienteQuery = ''; setClienteQuery('');
     setShowNuevoCliente(false);
     setNuevoClienteErr('');
   };
@@ -355,20 +370,18 @@ function Ventas() {
     try { await api.cancelarPedido(p.id); load(); } catch (e) { alert(e.message); }
   };
 
-  // Task 1: sugerencias de clientes filtradas por nombre
   const clienteSugs = clienteQuery.trim().length > 0
     ? clientes.filter(c => norm(c.nombre).includes(norm(clienteQuery.trim())))
     : [];
 
-  // Task 2: guardar nuevo cliente desde formulario inline
   const guardarNuevoCliente = async () => {
     setNuevoClienteErr('');
     try {
       const nuevo = await api.createCliente(nuevoClienteForm);
       const lista = await api.clientes();
       setClientes(lista);
-      setF(prev => ({ ...prev, cliente_id: nuevo.id }));
-      setClienteQuery(nuevo.nombre);
+      setFP(prev => ({ ...prev, cliente_id: nuevo.id }));
+      setClienteQueryP(nuevo.nombre);
       setShowNuevoCliente(false);
       setClienteOpen(false);
       setNuevoClienteForm({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
@@ -381,68 +394,52 @@ function Ventas() {
     <div className="sale-box">
       <h3>Registrar venta</h3>
       <div className="row">
-        {/* Tasks 1 + 2: buscador de clientes con formulario inline */}
+        {/* Buscador de clientes con dropdown */}
         <Field label="Cliente" hint="A quién se le vende">
           <div className="autocomplete-wrap">
             <input
               placeholder="Buscar cliente por nombre..."
               value={clienteQuery}
               autoComplete="off"
-              onChange={e => { setClienteQuery(e.target.value); setF(prev => ({ ...prev, cliente_id: '' })); setClienteOpen(true); setShowNuevoCliente(false); }}
+              onChange={e => { setClienteQueryP(e.target.value); setFP(prev => ({ ...prev, cliente_id: '' })); setClienteOpen(true); }}
               onFocus={() => { if (clienteQuery.trim()) setClienteOpen(true); }}
               onBlur={() => setTimeout(() => setClienteOpen(false), 150)}
             />
             {clienteOpen && clienteQuery.trim().length > 0 && (
               <ul className="sug-list">
                 {clienteSugs.map(c => (
-                  <li key={c.id} className="sug-item" onMouseDown={() => { setF(prev => ({ ...prev, cliente_id: c.id })); setClienteQuery(c.nombre); setClienteOpen(false); setShowNuevoCliente(false); }}>
+                  <li key={c.id} className="sug-item" onMouseDown={() => { setFP(prev => ({ ...prev, cliente_id: c.id })); setClienteQueryP(c.nombre); setClienteOpen(false); }}>
                     <span>{c.nombre}</span>
                     <span className="muted" style={{ fontSize: '12px' }}> — DNI {c.dni}{c.telefono ? ` · ${c.telefono}` : ''}</span>
                   </li>
                 ))}
                 {clienteSugs.length === 0 && (
-                  <li className="sug-item sug-crear" onMouseDown={() => { setShowNuevoCliente(true); setNuevoClienteForm(prev => ({ ...prev, nombre: clienteQuery.trim() })); setClienteOpen(false); }}>
+                  <li className="sug-item sug-crear" onMouseDown={() => { setNuevoClienteForm(prev => ({ ...prev, nombre: clienteQuery.trim() })); setShowNuevoCliente(true); setClienteOpen(false); }}>
                     ➕ Crear &quot;{clienteQuery.trim()}&quot; como nuevo cliente
                   </li>
                 )}
               </ul>
             )}
           </div>
-          {/* Task 2: formulario inline de nuevo cliente */}
-          {showNuevoCliente && (
-            <div className="nuevo-cli-form">
-              <p className="nuevo-cli-title">Nuevo cliente</p>
-              <div className="grid">
-                <Field label="Nombre*"><input placeholder="Martina López" value={nuevoClienteForm.nombre} onChange={e => setNuevoClienteForm(prev => ({ ...prev, nombre: e.target.value }))} /></Field>
-                <Field label="Email*"><input type="email" placeholder="martina@mail.com" value={nuevoClienteForm.email} onChange={e => setNuevoClienteForm(prev => ({ ...prev, email: e.target.value }))} /></Field>
-                <Field label="Teléfono"><input placeholder="351-2345678" value={nuevoClienteForm.telefono} onChange={e => setNuevoClienteForm(prev => ({ ...prev, telefono: e.target.value }))} /></Field>
-                <Field label="DNI*"><input placeholder="30123456" value={nuevoClienteForm.dni} onChange={e => setNuevoClienteForm(prev => ({ ...prev, dni: e.target.value }))} /></Field>
-                <Field label="Dirección"><input placeholder="Av Colón 1234" value={nuevoClienteForm.direccion} onChange={e => setNuevoClienteForm(prev => ({ ...prev, direccion: e.target.value }))} /></Field>
-              </div>
-              {nuevoClienteErr && <p className="err" style={{ marginTop: '6px' }}>{nuevoClienteErr}</p>}
-              <div className="modal-actions" style={{ marginTop: '8px' }}>
-                <button className="ghost" onClick={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }}>Cancelar</button>
-                <button onClick={guardarNuevoCliente}>Guardar cliente</button>
-              </div>
-            </div>
-          )}
         </Field>
-        <Field label="Método de pago" hint="Cómo paga la venta"><select value={f.metodo_pago} onChange={e => setF({ ...f, metodo_pago: e.target.value })}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option></select></Field>
-        <Field label="Descuento del pedido" hint="Se aplica al total"><select value={f.descuento_tipo} onChange={e => setF({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
-        <Field label="Valor del descuento" hint="Si no hay dto, 0"><input type="number" value={f.descuento_valor} onChange={e => setF({ ...f, descuento_valor: e.target.value })} /></Field>
+        <Field label="Método de pago" hint="Cómo paga la venta"><select value={f.metodo_pago} onChange={e => setFP({ ...f, metodo_pago: e.target.value })}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option></select></Field>
+        <Field label="Descuento del pedido" hint="Se aplica al total"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
+        <Field label="Valor del descuento" hint="Si no hay dto, 0"><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} /></Field>
       </div>
       {lineas.map((l, i) => <div className="line" key={i}>
-        {/* Task 3: buscador de productos con badge de stock */}
         <Field className="lp" label="Producto" hint="Con stock disponible">
-          <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLineas(lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x))} />
+          <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLineasP(lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x))} />
         </Field>
-        <Field className="lc" label="Cantidad" hint="Unidades"><input type="number" min="1" value={l.cantidad} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} /></Field>
-        <Field className="ld" label="Descuento" hint="De esta línea"><select value={l.descuento_tipo} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
-        <Field className="lv" label="Valor" hint="Del dto línea"><input type="number" value={l.descuento_valor} onChange={e => setLineas(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} /></Field>
-        <button className="ghost" title="Quitar línea" onClick={() => setLineas(lineas.filter((_, j) => j !== i))}>-</button>
+        <Field className="lc" label="Cantidad" hint="Unidades"><input type="number" min="1" value={l.cantidad} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} /></Field>
+        <Field className="ld" label="Descuento" hint="De esta línea"><select value={l.descuento_tipo} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
+        <Field className="lv" label="Valor" hint="Del dto línea"><input type="number" value={l.descuento_valor} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} /></Field>
+        {/* Solo mostrar el botón quitar si hay más de 1 línea */}
+        {lineas.length > 1 && (
+          <button className="ghost" title="Quitar línea" onClick={() => setLineasP(lineas.filter((_, j) => j !== i))}>-</button>
+        )}
       </div>)}
       <div className="modal-actions">
-        <button className="ghost" onClick={() => setLineas([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>+ línea</button>
+        <button className="ghost" onClick={() => setLineasP([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>+ línea</button>
         <span style={{ flex: 1 }} />
         <button onClick={submit}>Guardar venta</button>
       </div>
@@ -452,6 +449,22 @@ function Ventas() {
       <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {cliNombre(p.cliente_id)} · ${p.total} · {p.estado} · {p.metodo_pago}<br />
         <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small>
         {p.estado === 'pagado' && <button onClick={() => cancelar(p)}>cancelar</button>}</li>)}</ul>}
+
+    {/* Modal nuevo cliente — abre centrado y ocupa el ancho completo del modal */}
+    <Modal open={showNuevoCliente} onClose={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }} title="Nuevo cliente" wide>
+      <div className="grid">
+        <Field label="Nombre*" hint="Nombre y apellido"><input placeholder="Martina López" value={nuevoClienteForm.nombre} onChange={e => setNuevoClienteForm(prev => ({ ...prev, nombre: e.target.value }))} /></Field>
+        <Field label="Email*" hint="Email único del cliente"><input type="email" placeholder="martina@mail.com" value={nuevoClienteForm.email} onChange={e => setNuevoClienteForm(prev => ({ ...prev, email: e.target.value }))} /></Field>
+        <Field label="Teléfono" hint="Opcional"><input placeholder="351-2345678" value={nuevoClienteForm.telefono} onChange={e => setNuevoClienteForm(prev => ({ ...prev, telefono: e.target.value }))} /></Field>
+        <Field label="DNI*" hint="DNI único del cliente"><input placeholder="30123456" value={nuevoClienteForm.dni} onChange={e => setNuevoClienteForm(prev => ({ ...prev, dni: e.target.value }))} /></Field>
+        <Field label="Dirección" hint="Opcional"><input placeholder="Av Colón 1234" value={nuevoClienteForm.direccion} onChange={e => setNuevoClienteForm(prev => ({ ...prev, direccion: e.target.value }))} /></Field>
+      </div>
+      {nuevoClienteErr && <p className="err">{nuevoClienteErr}</p>}
+      <div className="modal-actions">
+        <button className="ghost" onClick={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }}>Cancelar</button>
+        <button onClick={guardarNuevoCliente}>Guardar cliente</button>
+      </div>
+    </Modal>
   </section>;
 }
 

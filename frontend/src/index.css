@@ -236,3 +236,55 @@ button.del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
 .login-card input, .login-card button { width: 100%; }
 .login-card .small { font-size: 12px; }
 .logo-circle.lg { width: 84px; height: 84px; }
+
+/* ===== Autocomplete (Tasks 1, 2, 3) ===== */
+.autocomplete-wrap { position: relative; width: 100%; }
+.autocomplete-wrap input { width: 100%; }
+
+.sug-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1.5px solid var(--teal-soft);
+  border-radius: 12px; box-shadow: 0 8px 24px rgba(21,160,146,.15);
+  z-index: 100; max-height: 240px; overflow-y: auto;
+  list-style: none; padding: 6px; margin: 0;
+}
+.sug-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 11px; border-radius: 9px; cursor: pointer;
+  font-size: 14px; transition: background .12s;
+  background: none; border: none;
+}
+.sug-item:hover { background: var(--teal-soft); }
+.sug-item.disabled {
+  opacity: 0.55; cursor: not-allowed; pointer-events: none;
+}
+.sug-item.sug-crear { color: var(--teal-dark); font-weight: 600; font-family: 'Poppins'; font-size: 13px; }
+.sug-item.sug-crear:hover { background: var(--teal-soft); }
+
+/* Formulario inline nuevo cliente (Task 2) */
+.nuevo-cli-form {
+  background: var(--teal-soft); border: 1.5px solid #b2e4de;
+  border-radius: 14px; padding: 14px 14px 10px;
+  margin-top: 8px; display: grid; gap: 8px;
+}
+.nuevo-cli-title {
+  margin: 0 0 2px; font-family: 'Poppins'; font-size: 13px;
+  font-weight: 700; color: var(--teal-dark);
+}
+
+/* Paginador historial (Tasks 4, 5) */
+.hist-pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; margin-top: 10px;
+}
+.hist-pager button.ghost {
+  padding: 6px 12px; font-size: 16px; line-height: 1;
+  min-width: 34px;
+}
+.dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--line);
+  cursor: pointer; transition: background .15s, transform .15s;
+}
+.dot.active { background: var(--teal); transform: scale(1.25); }
+.dot:hover:not(.active) { background: #b2e4de; }

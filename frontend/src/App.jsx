@@ -87,6 +87,8 @@ function Login({ onOk }) {
 /* ---------- Distribuidoras / Cuenta corriente (paso 2) ---------- */
 const TIPO_COD = { BOLETA_001: '001', PAGO_EFECTIVO_002: '002', PAGO_TRANSFER_003: '003', NOTA_CREDITO_004: '004' };
 const TIPO_TXT = { BOLETA_001: 'Pedido', PAGO_EFECTIVO_002: 'Pago en Efectivo', PAGO_TRANSFER_003: 'Pago Transferencia', NOTA_CREDITO_004: 'Nota de Crédito' };
+const MEDIO_TXT = { efectivo: 'EF · efectivo', transferencia: 'TR · transferencia', mercadopago: 'MP · mercadopago', debito: 'DB · débito', credito: 'CD · crédito', tarjeta: 'Tarjeta' };
+const MEDIOS_SEL = Object.entries(MEDIO_TXT).filter(([v]) => v !== 'tarjeta');
 
 function Proveedores() {
   const { data, err, loading, reload } = useLoad(api.saldosProv);
@@ -552,7 +554,7 @@ function Ventas() {
             )}
           </div>
         </Field>
-        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); }}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option><option>debito</option><option>credito</option></select></Field>
+        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); }}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
         <Field label="Descuento del pedido"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
         <Field label="Valor del descuento" hint="Si no hay dto, 0" error={eDtoPedido}><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} className={eDtoPedido ? 'invalid' : ''} /></Field>
       </div>
@@ -579,7 +581,7 @@ function Ventas() {
     </div>
     <h3>Ventas de hoy</h3>
     {pedidos.length === 0 ? <p className="muted">Todavía no hay ventas hoy.</p> :
-      <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {cliNombre(p.cliente_id)} · ${p.total} · {p.estado} · {p.metodo_pago}<br />
+      <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {cliNombre(p.cliente_id)} · ${p.total} · {p.estado} · {MEDIO_TXT[p.metodo_pago] || p.metodo_pago}<br />
         <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small>
         {p.estado === 'pagado' && <button onClick={() => cancelar(p)}>cancelar</button>}</li>)}</ul>}
 
@@ -640,7 +642,7 @@ function Clientes() {
         ? <p className="muted">Este cliente todavía no tiene pedidos.</p>
         : <>
           <ul>{view.map(p => <li key={p.id}>
-            <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {p.metodo_pago}
+            <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {MEDIO_TXT[p.metodo_pago] || p.metodo_pago}
             <button onClick={() => setDetId(detId === p.id ? null : p.id)}>{detId === p.id ? 'ocultar detalle' : 'ver detalle'}</button>
             {detId === p.id && (
               <div className="det">
@@ -752,7 +754,7 @@ function Caja() {
       <p className="muted small">Las ventas y los pagos a distribuidoras se registran solos.</p>
       <div className="row">
         <Field label="Tipo"><select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="SALIDA">salida</option><option value="ENTRADA">entrada</option></select></Field>
-        <Field label="Medio"><select value={f.medio} onChange={e => setF({ ...f, medio: e.target.value })}><option value="efectivo">EF · efectivo</option><option value="transferencia">TR · transferencia</option><option value="mercadopago">MP · mercadopago</option><option value="debito">DB · débito</option><option value="credito">CD · crédito</option></select></Field>
+        <Field label="Método de pago"><select value={f.medio} onChange={e => setF({ ...f, medio: e.target.value })}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
         <Field label="Descripción"><input placeholder="Ej: Cabify" value={f.descripcion} onChange={e => setF({ ...f, descripcion: e.target.value })} /></Field>
         <Field label="Monto"><input type="number" placeholder="0" value={f.monto} onChange={e => setF({ ...f, monto: e.target.value })} /></Field>
         <button onClick={guardar}>Agregar</button>
@@ -762,12 +764,12 @@ function Caja() {
       <div>
         <h3>Entradas</h3>
         {entradas.length === 0 ? <p className="muted">Sin entradas.</p> :
-          <ul>{entradas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {m.medio}</small></li>)}</ul>}
+          <ul>{entradas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {MEDIO_TXT[m.medio] || m.medio}</small></li>)}</ul>}
       </div>
       <div>
         <h3>Salidas</h3>
         {salidas.length === 0 ? <p className="muted">Sin salidas.</p> :
-          <ul>{salidas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {m.medio}</small>
+          <ul>{salidas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {MEDIO_TXT[m.medio] || m.medio}</small>
             {!m.automatico && <button onClick={() => borrar(m)}>borrar</button>}</li>)}</ul>}
       </div>
     </div>

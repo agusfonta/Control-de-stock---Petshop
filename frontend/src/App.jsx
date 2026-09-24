@@ -90,57 +90,31 @@ const TIPO_TXT = { BOLETA_001: 'Pedido', PAGO_EFECTIVO_002: 'Pago en Efectivo', 
 
 function Proveedores() {
   const { data, err, loading, reload } = useLoad(api.saldosProv);
-  const [selId, setSelId] = useState(null);
-  const [movs, setMovs] = useState([]);
+  const [cuentas, setCuentas] = useState({}); // id -> movs (varias abiertas a la vez)
   const [mErr, setMErr] = useState('');
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' });
-  const [mForm, setMForm] = useState({ tipo: 'BOLETA_001', nro: '', monto: '' });
 
-  const sel = (data || []).find(p => p.id === selId);
-  const ver = async (id) => {
-    if (!id) { setSelId(null); setMovs([]); return; }
-    if (selId === id) { setSelId(null); setMovs([]); return; }
-    try { setMErr(''); setMovs(await api.provMovs(id)); setSelId(id); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' }); }
+  const abrir = async (id) => {
+    if (cuentas[id]) { const nx = { ...cuentas }; delete nx[id]; setCuentas(nx); return; }
+    try { setMErr(''); const movs = await api.provMovs(id); setCuentas({ ...cuentas, [id]: movs }); }
     catch (e) { setMErr(e.message); }
   };
-  const guardarMov = async () => {
-    if (!mForm.nro.trim() || !(+mForm.monto > 0)) { setMErr('N° y monto mayor a 0'); return; }
-    try {
-      await api.createProvMov(selId, { tipo: mForm.tipo, nro: mForm.nro.trim(), monto: +mForm.monto });
-      setMovs(await api.provMovs(selId)); reload(); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' });
-    } catch (e) { setMErr(e.message); }
-  };
+  const cerrar = (id) => setCuentas(prev => { const nx = { ...prev }; delete nx[id]; return nx; });
+  const setMovsDe = (id) => (movs) => setCuentas(prev => ({ ...prev, [id]: movs }));
   const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  const lista = data || [];
   return <section>
     <div className="sec-head"><h2>Distribuidoras</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
-    {sel && <div className="sale-box">
-      <h3>{sel.nombre} — cuenta corriente</h3>
-      <p className="muted small">
-        📦 Entregas: <b>{sel.dias_entrega || '—'}</b>{sel.alias ? <> · Alias: <b>{sel.alias}</b></> : null}<br />
-        Pedido suma a tu deuda · Pagos y notas de crédito la restan · <b>Deuda = lo que debés hoy</b>.
-      </p>
-      <Err e={mErr} />
-      <div className="row">
-        <Field label="Tipo"><select value={mForm.tipo} onChange={e => setMForm({ ...mForm, tipo: e.target.value })}>{Object.entries(TIPO_TXT).map(([v, t]) => <option key={v} value={v}>{TIPO_COD[v]} · {t}</option>)}</select></Field>
-        <Field label="N° Boleta"><input placeholder={mForm.tipo.startsWith('PAGO') ? 'PAGO 99001' : '99001'} value={mForm.nro} onChange={e => setMForm({ ...mForm, nro: e.target.value })} /></Field>
-        <Field label="Monto"><input type="number" placeholder="0" value={mForm.monto} onChange={e => setMForm({ ...mForm, monto: e.target.value })} /></Field>
-        <button onClick={guardarMov}>Agregar</button>
-      </div>
-      <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Medio</th><th>Pagado</th><th>Boleta</th><th>Deuda</th></tr></thead>
-        <tbody>{movs.map(m => <tr key={m.id}>
-          <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_TXT[m.tipo] || TIPO_COD[m.tipo]}</td>
-          <td>{m.pago ? fmt(m.pago) : '-'}</td><td>{m.saldo_boleta ? fmt(m.saldo_boleta) : '-'}</td>
-          <td><b style={{ color: m.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(m.saldo)}</b></td></tr>)}
-        </tbody></table></div>
-      {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
-    </div>}
-    {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
+    <Err e={mErr} />
+    {lista.filter(p => cuentas[p.id]).map(p =>
+      <CuentaBox key={p.id} p={p} movs={cuentas[p.id]} setMovs={setMovsDe(p.id)} onClose={() => cerrar(p.id)} onSaved={reload} />)}
+    {loading ? 'Cargando...' : <ul>{lista.filter(p => !cuentas[p.id]).map(p =>
       <li key={p.id} className="cat-li">
         <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
           <small className="muted">{p.dias_entrega ? `Entregas: ${p.dias_entrega} · ` : ''}saldo: <b style={{ color: p.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(p.saldo)}</b></small></span>
-        <button onClick={() => ver(p.id)}>{selId === p.id ? 'ocultar' : 'ver cuenta'}</button>
+        <button onClick={() => abrir(p.id)}>ver cuenta</button>
       </li>)}
     </ul>}
     <Modal open={open} onClose={() => setOpen(false)} title="Nueva distribuidora">
@@ -152,6 +126,40 @@ function Proveedores() {
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (!f.nombre.trim()) { alert('Nombre requerido'); return; } try { await api.createProv({ ...f, nombre: f.nombre.trim(), contacto: f.contacto || null, telefono: f.telefono || null, alias: f.alias || null, dias_entrega: f.dias_entrega || null }); setF({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
   </section>;
+}
+
+function CuentaBox({ p, movs, setMovs, onClose, onSaved }) {
+  const [mForm, setMForm] = useState({ tipo: 'BOLETA_001', nro: '', monto: '' });
+  const [mErr, setMErr] = useState('');
+  const guardarMov = async () => {
+    if (!mForm.nro.trim() || !(+mForm.monto > 0)) { setMErr('N° y monto mayor a 0'); return; }
+    try {
+      await api.createProvMov(p.id, { tipo: mForm.tipo, nro: mForm.nro.trim(), monto: +mForm.monto });
+      setMErr(''); setMovs(await api.provMovs(p.id)); onSaved(); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' });
+    } catch (e) { setMErr(e.message); }
+  };
+  const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  return <div className="sale-box">
+    <div className="sec-head"><h3>{p.nombre} — cuenta corriente</h3><button className="ghost" onClick={onClose}>ocultar</button></div>
+    <p className="muted small">
+      📦 Entregas: <b>{p.dias_entrega || '—'}</b>{p.alias ? <> · Alias: <b>{p.alias}</b></> : null}<br />
+      Pedido suma a tu deuda · Pagos y notas de crédito la restan · <b>Deuda = lo que debés hoy</b>.
+    </p>
+    <Err e={mErr} />
+    <div className="row">
+      <Field label="Tipo"><select value={mForm.tipo} onChange={e => setMForm({ ...mForm, tipo: e.target.value })}>{Object.entries(TIPO_TXT).map(([v, t]) => <option key={v} value={v}>{TIPO_COD[v]} · {t}</option>)}</select></Field>
+      <Field label="N° Boleta"><input placeholder={mForm.tipo.startsWith('PAGO') ? 'PAGO 99001' : '99001'} value={mForm.nro} onChange={e => setMForm({ ...mForm, nro: e.target.value })} /></Field>
+      <Field label="Monto"><input type="number" placeholder="0" value={mForm.monto} onChange={e => setMForm({ ...mForm, monto: e.target.value })} /></Field>
+      <button onClick={guardarMov}>Agregar</button>
+    </div>
+    <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Medio</th><th>Pagado</th><th>Boleta</th><th>Deuda</th></tr></thead>
+      <tbody>{movs.map(m => <tr key={m.id}>
+        <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_TXT[m.tipo] || TIPO_COD[m.tipo]}</td>
+        <td>{m.pago ? fmt(m.pago) : '-'}</td><td>{m.saldo_boleta ? fmt(m.saldo_boleta) : '-'}</td>
+        <td><b style={{ color: m.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(m.saldo)}</b></td></tr>)}
+      </tbody></table></div>
+    {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
+  </div>;
 }
 
 function useLoad(fn, deps = []) {

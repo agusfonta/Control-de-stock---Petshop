@@ -85,6 +85,8 @@ function Login({ onOk }) {
 /* ---------- Principal eliminado: Ventas va directo; Caja vive en Historial ---------- */
 
 /* ---------- Distribuidoras: pedidos de compra (pedido -> entrega -> pago) ---------- */
+const MEDIO_TXT = { efectivo: 'EF · efectivo', transferencia: 'TR · transferencia', mercadopago: 'MP · mercadopago', debito: 'DB · débito', credito: 'CD · crédito', tarjeta: 'Tarjeta' };
+const MEDIOS_SEL = Object.entries(MEDIO_TXT).filter(([v]) => v !== 'tarjeta');
 
 function Proveedores() {
   const hoy = new Date().toISOString().slice(0, 10);

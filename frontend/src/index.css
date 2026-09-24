@@ -276,6 +276,9 @@ button.del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
   font-weight: 700; color: var(--teal-dark);
 }
 
+/* Principal: ventas + caja apiladas */
+.stack { display: grid; gap: 16px; }
+
 /* ===== Paso 4: tablet horizontal + compu, un solo layout ===== */
 
 /* Tablas anchas: scroll interno en vez de romper el card (igual en compu) */

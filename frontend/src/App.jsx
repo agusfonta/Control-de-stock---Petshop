@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getSession, setSession } from './api';
 
-const TABS = ['Hoy', 'Ventas', 'Caja', 'Productos', 'Clientes', 'Distribuidoras'];
+const TABS = ['Principal', 'Stock', 'Clientes', 'Distribuidoras'];
 
 // Estado de Ventas fuera del componente para persistir entre cambios de pestaña
 const ventasState = {
@@ -11,18 +11,18 @@ const ventasState = {
 };
 
 export default function App() {
-  const [tab, setTab] = useState('Productos');
+  const [tab, setTab] = useState('Principal');
   const [session, setSess] = useState(getSession);
   const [passOpen, setPassOpen] = useState(false);
   const [pc, setPc] = useState({ current: '', next: '' });
-  const icons = { 'Hoy': '📊', 'Productos': '🛒', 'Ventas': '🧾', 'Caja': '💰', 'Clientes': '🐾', 'Usuarios': '👤', 'Distribuidoras': '🚚' };
+  const icons = { 'Principal': '🧾', 'Stock': '📦', 'Clientes': '🐾', 'Distribuidoras': '🚚' };
   useEffect(() => {
     const off = () => setSess(null);
     window.addEventListener('auth-expired', off);
     return () => window.removeEventListener('auth-expired', off);
   }, []);
   if (!session?.token) return <Login onOk={setSess} />;
-  const tabs = session.rol === 'admin' ? [...TABS, 'Usuarios'] : TABS;
+  const tabs = TABS;
   return (
     <div className="wrap">
       <header className="brand">
@@ -40,13 +40,10 @@ export default function App() {
       </Modal>
       <nav>{tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{icons[t]} {t}</button>)}</nav>
       <main>
-        {tab === 'Hoy' && <Hoy go={setTab} />}
-        {tab === 'Ventas' && <Ventas />}
-        {tab === 'Caja' && <Caja />}
-        {tab === 'Productos' && <Productos isAdmin={session.rol === 'admin'} />}
+        {tab === 'Principal' && <Principal />}
+        {tab === 'Stock' && <Productos isAdmin={session.rol === 'admin'} />}
         {tab === 'Clientes' && <Clientes />}
         {tab === 'Distribuidoras' && <Proveedores />}
-        {tab === 'Usuarios' && <Usuarios />}
       </main>
     </div>
   );
@@ -84,26 +81,9 @@ function Login({ onOk }) {
   );
 }
 
-/* ---------- Usuarios (solo admin) ---------- */
-function Usuarios() {
-  const { data, err, loading, reload } = useLoad(api.users);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ username: '', password: '', rol: 'vendedor' });
-  return <section>
-    <div className="sec-head"><h2>Usuarios</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
-    <Err e={err} />
-    {loading ? 'Cargando...' : <ul>{(data || []).map(u => <li key={u.id}>{u.username} · {u.rol} · {u.activo ? 'activo' : 'inactivo'}</li>)}</ul>}
-    <Modal open={open} onClose={() => setOpen(false)} title="Nuevo usuario">
-      <Field label="Usuario" error={errNombre(f.username, 3)}>
-        <input placeholder="Usuario (mín 3)" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} className={errNombre(f.username, 3) && f.username ? 'invalid' : ''} />
-      </Field>
-      <Field label="Contraseña" error={!(f.password || '').trim() ? 'Completá este campo' : f.password.length < 6 ? 'Mínimo 6 caracteres' : ''}>
-        <input placeholder="Contraseña (mín 6)" type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
-      </Field>
-      <select value={f.rol} onChange={e => setF({ ...f, rol: e.target.value })}><option value="vendedor">vendedor</option><option value="admin">admin</option></select>
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (errNombre(f.username, 3) || (f.password || '').length < 6) { alert('Corregí los campos marcados en rojo'); return; } try { await api.register(f); setF({ username: '', password: '', rol: 'vendedor' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
-    </Modal>
-  </section>;
+/* ---------- Principal: ventas del momento + caja del día ---------- */
+function Principal() {
+  return <div className="stack"><Ventas /><Caja /></div>;
 }
 
 /* ---------- Distribuidoras / Cuenta corriente (paso 2) ---------- */
@@ -121,6 +101,7 @@ function Proveedores() {
 
   const sel = (data || []).find(p => p.id === selId);
   const ver = async (id) => {
+    if (!id) { setSelId(null); setMovs([]); return; }
     if (selId === id) { setSelId(null); setMovs([]); return; }
     try { setMErr(''); setMovs(await api.provMovs(id)); setSelId(id); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' }); }
     catch (e) { setMErr(e.message); }
@@ -136,6 +117,13 @@ function Proveedores() {
   return <section>
     <div className="sec-head"><h2>Distribuidoras</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
+    <div className="row">
+      <Field label="Filtrar por distribuidora">
+        <select value={selId || ''} onChange={e => ver(e.target.value ? +e.target.value : null)}>
+          <option value="">Todas</option>{(data || []).map(p => <option key={p.id} value={p.id}>{p.nombre} · debe {fmt(p.saldo)}</option>)}
+        </select>
+      </Field>
+    </div>
     {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
       <li key={p.id} className="cat-li">
         <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
@@ -145,6 +133,10 @@ function Proveedores() {
     </ul>}
     {sel && <div className="sale-box">
       <h3>{sel.nombre} — cuenta corriente</h3>
+      <p className="muted small">
+        📦 Entregas: <b>{sel.dias_entrega || '—'}</b>{sel.alias ? <> · Alias: <b>{sel.alias}</b></> : null}<br />
+        Pedido suma a tu deuda · Pagos y notas de crédito la restan · <b>Deuda = lo que debés hoy</b>.
+      </p>
       <Err e={mErr} />
       <div className="row">
         <Field label="Tipo"><select value={mForm.tipo} onChange={e => setMForm({ ...mForm, tipo: e.target.value })}>{Object.entries(TIPO_TXT).map(([v, t]) => <option key={v} value={v}>{TIPO_COD[v]} · {t}</option>)}</select></Field>
@@ -152,9 +144,9 @@ function Proveedores() {
         <Field label="Monto"><input type="number" placeholder="0" value={mForm.monto} onChange={e => setMForm({ ...mForm, monto: e.target.value })} /></Field>
         <button onClick={guardarMov}>Agregar</button>
       </div>
-      <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Cód</th><th>Pago</th><th>Saldo boleta</th><th>Saldo</th></tr></thead>
+      <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Medio</th><th>Pagado</th><th>Boleta</th><th>Deuda</th></tr></thead>
         <tbody>{movs.map(m => <tr key={m.id}>
-          <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_COD[m.tipo]}</td>
+          <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_TXT[m.tipo] || TIPO_COD[m.tipo]}</td>
           <td>{m.pago ? fmt(m.pago) : '-'}</td><td>{m.saldo_boleta ? fmt(m.saldo_boleta) : '-'}</td>
           <td><b style={{ color: m.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(m.saldo)}</b></td></tr>)}
         </tbody></table></div>
@@ -330,7 +322,7 @@ function Productos({ isAdmin }) {
     } catch (e) { alert(e.message); }
   };
   return <section>
-    <div className="sec-head"><h2>Productos</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <div className="sec-head"><h2>Stock</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <div className="row"><button className="ghost" onClick={() => setShowCats(!showCats)}>🏷️ {showCats ? 'Ocultar categorías' : 'Ver categorías'}</button></div>
     {showCats && <Categorias isAdmin={isAdmin} />}
     <Err e={err} />
@@ -799,55 +791,4 @@ function Caja() {
   </section>;
 }
 
-/* ---------- Hoy (resumen del día) ---------- */
-function Hoy({ go }) {
-  const hoy = new Date().toISOString().slice(0, 10);
-  const [pedidos, setPedidos] = useState([]);
-  const [rep, setRep] = useState(null);
-  const [bajo, setBajo] = useState([]);
-  const [balance, setBalance] = useState(null);
-  const [err, setErr] = useState(''); const [loading, setLoading] = useState(false);
-
-  const load = async () => {
-    setLoading(true); setErr('');
-    try {
-      const [p, r, sb, cj] = await Promise.all([
-        api.pedidos(hoy), api.reporte(hoy),
-        api.prods({ stock_bajo: true }).catch(() => []),
-        api.caja(hoy).catch(() => null),
-      ]);
-      setPedidos(p); setRep(r); setBajo(sb || []); setBalance(cj?.balance ?? null);
-    } catch (e) { setErr(e.message); } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
-  const fmt$ = (n) => '$' + (+(n || 0)).toLocaleString('es-AR');
-
-  return <section>
-    <div className="sec-head"><h2>Hoy</h2></div>
-    <Err e={err} />
-    {loading && <p className="muted">Cargando...</p>}
-    <div className="cards">
-      <div className="card"><span>Ventas</span><b>{fmt$(rep?.total_ars)}</b><small>{rep ? rep.cantidad_pedidos : 0} pedidos pagados</small></div>
-      <div className="card"><span>Balance caja</span><b>{balance === null ? '—' : fmt$(balance)}</b><small>entrada − salida</small></div>
-      <div className="card"><span>Stock bajo</span><b>{bajo.length}</b><small>productos para reponer</small></div>
-    </div>
-    <div className="cols">
-      <div>
-        <h3>Últimas ventas</h3>
-        {pedidos.length === 0 ? <p className="muted">Todavía no hay ventas hoy.</p> :
-          <ul>{pedidos.slice(0, 5).map(p => <li key={p.id}>#{p.id} · {p.estado} · ${p.total} · {p.metodo_pago}<br />
-            <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small></li>)}</ul>}
-        <button className="ghost" onClick={() => go('Ventas')}>Ver todas en Ventas ›</button>
-      </div>
-      <div>
-        <h3>Reponer stock</h3>
-        {bajo.length === 0 ? <p className="muted">Sin alertas de stock.</p> :
-          <ul>{bajo.slice(0, 5).map(p => <li key={p.id}>{p.nombre} · stock {p.stock} (mín {p.stock_minimo})</li>)}</ul>}
-        <div className="row">
-          <button className="ghost" onClick={() => go('Productos')}>Ver en Productos ›</button>
-          <button className="ghost" onClick={() => go('Caja')}>Ver Caja ›</button>
-        </div>
-      </div>
-    </div>
-  </section>;
-}
+/* ---------- Hoy eliminado: su contenido vive en Principal (Ventas + Caja) ---------- */

@@ -237,7 +237,61 @@ class MovimientoCajaOut(BaseModel):
     descripcion: str
     monto: float
     pedido_id: Optional[int] = None
+    compra_id: Optional[int] = None
     automatico: bool = False  # True si lo generó una venta/pago (no se puede borrar)
+
+
+class DetalleCompraIn(BaseModel):
+    producto_id: int
+    cantidad: int = Field(ge=1, le=100000)
+    costo_unitario: Optional[float] = Field(default=None, ge=0)
+
+
+class CompraCreate(BaseModel):
+    proveedor_id: int
+    nro_boleta: str = Field(min_length=1, max_length=60)
+    fecha_pedido: Optional[datetime] = None
+    detalles: List[DetalleCompraIn] = Field(min_length=1)
+    pagado: bool = False
+    medio_pago: Optional[MetodoPago] = None
+
+    @model_validator(mode="after")
+    def _pago_ok(self):
+        if self.pagado and self.medio_pago is None:
+            raise ValueError("si está pagado, indicar medio_pago")
+        return self
+
+
+class CompraUpdate(BaseModel):
+    nro_boleta: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    fecha_pedido: Optional[datetime] = None
+    detalles: Optional[List[DetalleCompraIn]] = None
+    medio_pago: Optional[MetodoPago] = None
+
+
+class DetalleCompraOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    producto_id: int
+    producto_nombre: str = ""
+    cantidad: int
+    costo_unitario: float
+    subtotal: float
+
+
+class CompraOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    proveedor_id: int
+    proveedor_nombre: str = ""
+    fecha_pedido: datetime
+    nro_boleta: str
+    fecha_entrega: Optional[datetime] = None
+    entregada: bool = False
+    pagado: bool = False
+    medio_pago: Optional[MetodoPago] = None
+    monto: float
+    detalles: List[DetalleCompraOut] = []
 
 
 class UserCreate(BaseModel):

@@ -13,6 +13,7 @@ NUNCA toca datos reales: filtra todo por prefijo DEMO- / 'Demo'.
 """
 import argparse
 import sys
+from datetime import datetime
 
 from app.core.database import SessionLocal, Base, engine
 from app import models
@@ -76,6 +77,25 @@ def _limpiar_demo(db):
         db.query(models.MovimientoProveedor).filter(
             models.MovimientoProveedor.proveedor_id.in_(demo_prov_ids)
         ).delete()
+        demo_comp_ids = [
+            c.id
+            for c in db.query(models.Compra).filter(
+                models.Compra.proveedor_id.in_(demo_prov_ids)
+            ).all()
+        ]
+        if demo_comp_ids:
+            db.query(models.MovimientoCaja).filter(
+                models.MovimientoCaja.compra_id.in_(demo_comp_ids)
+            ).delete()
+            db.query(models.MovimientoStock).filter(
+                models.MovimientoStock.compra_id.in_(demo_comp_ids)
+            ).delete()
+            db.query(models.DetalleCompra).filter(
+                models.DetalleCompra.compra_id.in_(demo_comp_ids)
+            ).delete()
+            db.query(models.Compra).filter(
+                models.Compra.id.in_(demo_comp_ids)
+            ).delete()
     db.query(models.Proveedor).filter(
         models.Proveedor.nombre.like("%Demo%")
     ).delete()
@@ -233,18 +253,7 @@ def main() -> int:
             )
         )
 
-        # ---------- Cuenta corriente ficticia (espejo de su planilla Distribuidoras) ----------
-        T = models.TipoMovProveedor
-        db.add_all([
-            models.MovimientoProveedor(proveedor_id=norte.id, tipo=T.BOLETA_001, nro="99001", monto=67979.52),
-            models.MovimientoProveedor(proveedor_id=norte.id, tipo=T.PAGO_TRANSFER_003, nro="PAGO 99001", monto=67979.52),
-            models.MovimientoProveedor(proveedor_id=norte.id, tipo=T.BOLETA_001, nro="99120", monto=38578.47),
-            models.MovimientoProveedor(proveedor_id=mayo.id, tipo=T.BOLETA_001, nro="77010", monto=30791.07),
-            models.MovimientoProveedor(proveedor_id=mayo.id, tipo=T.NOTA_CREDITO_004, nro="NC 77010", monto=2000),
-        ])
-        db.flush()
-
-        # ---------- Caja ficticia: entradas auto de las ventas + salida del pago + gasto manual ----------
+        # ---------- Caja ficticia: entradas auto de las ventas + gasto manual ----------
         MP = models.MetodoPago
         db.add_all([
             models.MovimientoCaja(tipo=models.TipoMovCaja.ENTRADA, medio=MP.efectivo,
@@ -253,13 +262,47 @@ def main() -> int:
             models.MovimientoCaja(tipo=models.TipoMovCaja.ENTRADA, medio=MP.debito,
                                   descripcion=f"Venta #{ped2.id} · {cli.nombre}",
                                   monto=base2, pedido_id=ped2.id),
-            models.MovimientoCaja(tipo=models.TipoMovCaja.SALIDA, medio=MP.transferencia,
-                                  descripcion="Pago Distri Demo Norte PAGO 99001",
-                                  monto=67979.52),
             models.MovimientoCaja(tipo=models.TipoMovCaja.SALIDA, medio=MP.efectivo,
                                   descripcion="Cabify demo", monto=6500),
         ])
         db.flush()
+
+        # ---------- Compras ficticias a distribuidoras (pedido -> entrega -> pago) ----------
+        def add_compra(prov, nro, lineas, entregada=False, pagada=False, medio=None):
+            dets, monto = [], 0.0
+            for prod, cant in lineas:
+                sub = round(prod.precio_costo * cant, 2)
+                monto = round(monto + sub, 2)
+                dets.append(models.DetalleCompra(
+                    producto_id=prod.id, cantidad=cant,
+                    costo_unitario=prod.precio_costo, subtotal=sub))
+            comp = models.Compra(
+                proveedor_id=prov.id, nro_boleta=nro,
+                fecha_entrega=datetime.now() if entregada else None,
+                pagado=pagada, medio_pago=medio, monto=monto,
+                detalles=dets)
+            db.add(comp)
+            db.flush()
+            if entregada:
+                for det in dets:
+                    pr = db.get(models.Producto, det.producto_id)
+                    ant = pr.stock
+                    pr.stock = ant + det.cantidad
+                    db.add(models.MovimientoStock(
+                        producto_id=pr.id, tipo=models.TipoMovimiento.INGRESO,
+                        cantidad=det.cantidad, stock_anterior=ant,
+                        stock_nuevo=pr.stock, compra_id=comp.id))
+            if pagada:
+                db.add(models.MovimientoCaja(
+                    tipo=models.TipoMovCaja.SALIDA, medio=medio,
+                    descripcion=f"Pago {prov.nombre} {nro}",
+                    monto=monto, compra_id=comp.id))
+            db.flush()
+            return comp
+
+        add_compra(norte, "99001", [(a, 4)], entregada=True, pagada=True, medio=MP.transferencia)
+        add_compra(mayo, "77010", [(b, 2)], entregada=False, pagada=False)
+        add_compra(norte, "99120", [(c, 5)], entregada=True, pagada=False)
 
         if not db.query(models.User).filter(models.User.username == "admin").first():
             db.add(
@@ -273,7 +316,8 @@ def main() -> int:
         print(
             "Seed DEMO UX OK: 2 proveedores ficticios, 6 productos DEMO-*, "
             f"venta #{ped1.id} efectivo -10% total ${total}, "
-            f"venta #{ped2.id} debito total ${base2}"
+            f"venta #{ped2.id} debito total ${base2}, "
+            "3 compras demo (entregada+pagada, pendiente, entregada impaga)"
         )
         return 0
     except Exception:

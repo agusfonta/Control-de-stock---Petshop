@@ -81,6 +81,21 @@ export const api = {
   saldosProv: () => req('/proveedores/saldos'),
   provMovs: (id) => req(`/proveedores/${id}/movimientos`),
   createProvMov: (id, d) => req(`/proveedores/${id}/movimientos`, { method: 'POST', body: JSON.stringify(d) }),
+  compras: (p = {}) => {
+    const q = new URLSearchParams();
+    if (p.fecha) q.set('fecha', p.fecha);
+    if (p.proveedor) q.set('proveedor', p.proveedor);
+    if (p.pagada !== undefined && p.pagada !== '') q.set('pagada', p.pagada);
+    if (p.entregada !== undefined && p.entregada !== '') q.set('entregada', p.entregada);
+    const s = q.toString();
+    return req(`/compras${s ? `?${s}` : ''}`);
+  },
+  createCompra: (d) => req('/compras', { method: 'POST', body: JSON.stringify(d) }),
+  patchCompra: (id, d) => req(`/compras/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  entregarCompra: (id) => req(`/compras/${id}/entregar`, { method: 'PATCH' }),
+  pagarCompra: (id, d) => req(`/compras/${id}/pagar`, { method: 'PATCH', body: JSON.stringify(d || {}) }),
+  deleteCompra: (id) => req(`/compras/${id}`, { method: 'DELETE' }),
+  deudasProv: () => req('/compras/deudas'),
   caja: (fecha) => req(`/caja${fecha ? `?fecha=${fecha}` : ''}`),
   createCajaMov: (d) => req('/caja', { method: 'POST', body: JSON.stringify(d) }),
   deleteCajaMov: (id) => req(`/caja/${id}`, { method: 'DELETE' }),

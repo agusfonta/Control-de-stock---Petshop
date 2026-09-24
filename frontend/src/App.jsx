@@ -84,84 +84,211 @@ function Login({ onOk }) {
 
 /* ---------- Principal eliminado: Ventas va directo; Caja vive en Historial ---------- */
 
-/* ---------- Distribuidoras / Cuenta corriente (paso 2) ---------- */
-const TIPO_COD = { BOLETA_001: '001', PAGO_EFECTIVO_002: '002', PAGO_TRANSFER_003: '003', NOTA_CREDITO_004: '004' };
-const TIPO_TXT = { BOLETA_001: 'Pedido', PAGO_EFECTIVO_002: 'Pago en Efectivo', PAGO_TRANSFER_003: 'Pago Transferencia', NOTA_CREDITO_004: 'Nota de Crédito' };
-const MEDIO_TXT = { efectivo: 'EF · efectivo', transferencia: 'TR · transferencia', mercadopago: 'MP · mercadopago', debito: 'DB · débito', credito: 'CD · crédito', tarjeta: 'Tarjeta' };
-const MEDIOS_SEL = Object.entries(MEDIO_TXT).filter(([v]) => v !== 'tarjeta');
+/* ---------- Distribuidoras: pedidos de compra (pedido -> entrega -> pago) ---------- */
 
 function Proveedores() {
-  const { data, err, loading, reload } = useLoad(api.saldosProv);
-  const [cuentas, setCuentas] = useState({}); // id -> movs (varias abiertas a la vez)
-  const [mErr, setMErr] = useState('');
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [dia, setDia] = useState(hoy);
+  const [provs, setProvs] = useState([]);
+  const [deudas, setDeudas] = useState([]);
+  const [prods, setProds] = useState([]);
+  const [lista, setLista] = useState([]);
+  const [err, setErr] = useState('');
+  const [fProv, setFProv] = useState('');
+  const [fPago, setFPago] = useState('');
+  const [f, setF] = useState({ proveedor_id: '', fecha_pedido: hoy, nro: '', lineas: [{ producto_id: '', cantidad: 1, costo: '' }], pagado: false, medio: 'transferencia' });
+  const [tried, setTried] = useState(false);
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' });
+  const [nf, setNf] = useState({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' });
+  const [edit, setEdit] = useState(null);
+  const [ef, setEf] = useState({});
 
-  const abrir = async (id) => {
-    if (cuentas[id]) { const nx = { ...cuentas }; delete nx[id]; setCuentas(nx); return; }
-    try { setMErr(''); const movs = await api.provMovs(id); setCuentas({ ...cuentas, [id]: movs }); }
-    catch (e) { setMErr(e.message); }
+  const deudaDe = (id) => (deudas.find(d => d.id === id) || {}).deuda || 0;
+  const provDe = (id) => provs.find(p => String(p.id) === String(id)) || {};
+  const costoBase = (pid) => (prods.find(p => String(p.id) === String(pid)) || {}).precio_costo || 0;
+  const lineaTotal = (l) => (+l.cantidad || 0) * (l.costo === '' || l.costo == null ? costoBase(l.producto_id) : +l.costo);
+  const totalForm = (lineas) => lineas.reduce((a, l) => a + lineaTotal(l), 0);
+  const fmt = (n) => '$' + (+(n || 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+
+  const loadBase = async () => {
+    try {
+      const [p, d, pr] = await Promise.all([api.proveedores(), api.deudasProv(), api.prods().catch(() => [])]);
+      setProvs(p); setDeudas(d); setProds(pr);
+    } catch (e) { setErr(e.message); }
   };
-  const cerrar = (id) => setCuentas(prev => { const nx = { ...prev }; delete nx[id]; return nx; });
-  const setMovsDe = (id) => (movs) => setCuentas(prev => ({ ...prev, [id]: movs }));
-  const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
-  const lista = data || [];
+  const load = async (d, fp, fg) => {
+    setErr('');
+    try { setLista(await api.compras({ fecha: d, proveedor: fp || undefined, pagada: fg === '' ? undefined : fg })); }
+    catch (e) { setErr(e.message); }
+  };
+  useEffect(() => { loadBase(); load(hoy, '', ''); }, []);
+  const mover = (d) => {
+    const dt = new Date(dia + 'T12:00:00'); dt.setDate(dt.getDate() + d);
+    const s = dt.toISOString().slice(0, 10); setDia(s); load(s, fProv, fPago);
+  };
+  const refiltrar = (fp, fg) => load(dia, fp, fg);
+  const recargarTodo = () => { loadBase(); load(dia, fProv, fPago); };
+
+  const setLinea = (i, patch) => setF({ ...f, lineas: f.lineas.map((l, j) => j === i ? { ...l, ...patch } : l) });
+
+  const guardar = async () => {
+    setTried(true);
+    if (!f.proveedor_id || !f.nro.trim()) return;
+    if (f.lineas.some(l => !l.producto_id || !(+l.cantidad >= 1))) return;
+    if (f.pagado && !f.medio) return;
+    try {
+      await api.createCompra({
+        proveedor_id: +f.proveedor_id, nro_boleta: f.nro.trim(), fecha_pedido: f.fecha_pedido,
+        detalles: f.lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, ...(l.costo === '' ? {} : { costo_unitario: +l.costo }) })),
+        pagado: f.pagado, medio_pago: f.pagado ? f.medio : null,
+      });
+      setF({ proveedor_id: '', fecha_pedido: dia, nro: '', lineas: [{ producto_id: '', cantidad: 1, costo: '' }], pagado: false, medio: 'transferencia' });
+      setTried(false); recargarTodo();
+    } catch (e) { alert(e.message); }
+  };
+
+  const entregar = async (c) => {
+    if (!confirm(`Marcar pedido #${c.id} (${c.nro_boleta}) como entregado? Entra el stock.`)) return;
+    try { await api.entregarCompra(c.id); recargarTodo(); } catch (e) { alert(e.message); }
+  };
+  const pagar = async (c) => {
+    if (!c.medio_pago) { abrirEdit(c); alert('Elegí el medio de pago y marcá pagado en Editar.'); return; }
+    if (!confirm(`Marcar pedido #${c.id} como pagado (${fmt(c.monto)} por ${MEDIO_TXT[c.medio_pago]})? Sale de caja.`)) return;
+    try { await api.pagarCompra(c.id, {}); recargarTodo(); } catch (e) { alert(e.message); }
+  };
+  const borrar = async (c) => {
+    if (!confirm(`Borrar pedido #${c.id}? Solo si no está entregado ni pagado.`)) return;
+    try { await api.deleteCompra(c.id); recargarTodo(); } catch (e) { alert(e.message); }
+  };
+
+  const abrirEdit = (c) => {
+    setEdit(c);
+    setEf({
+      nro: c.nro_boleta, fecha: (c.fecha_pedido || '').slice(0, 10),
+      medio: c.medio_pago || 'transferencia', pagado: c.pagado,
+      lineas: (c.detalles || []).map(d => ({ producto_id: d.producto_id, cantidad: d.cantidad, costo: d.costo_unitario })),
+    });
+  };
+  const guardarEdit = async () => {
+    if (!ef.nro.trim()) { alert('N° de boleta requerido'); return; }
+    if (!edit.fecha_entrega && ef.lineas.some(l => !l.producto_id || !(+l.cantidad >= 1))) { alert('Revisá las líneas'); return; }
+    if (ef.pagado && !edit.pagado && !ef.medio) { alert('Elegí medio de pago'); return; }
+    try {
+      await api.patchCompra(edit.id, {
+        nro_boleta: ef.nro.trim(), fecha_pedido: ef.fecha,
+        medio_pago: ef.medio || null,
+        ...(!edit.fecha_entrega ? { detalles: ef.lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, costo_unitario: +l.costo })) } : {}),
+      });
+      if (ef.pagado && !edit.pagado) await api.pagarCompra(edit.id, { medio_pago: ef.medio });
+      setEdit(null); recargarTodo();
+    } catch (e) { alert(e.message); }
+  };
+
+  const selProv = provDe(f.proveedor_id);
   return <section>
-    <div className="sec-head"><h2>Distribuidoras</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <div className="sec-head"><h2>Distribuidoras · Pedidos</h2><button className="fab" onClick={() => setOpen(true)}>+ Nueva</button></div>
     <Err e={err} />
-    <Err e={mErr} />
-    {lista.filter(p => cuentas[p.id]).map(p =>
-      <CuentaBox key={p.id} p={p} movs={cuentas[p.id]} setMovs={setMovsDe(p.id)} onClose={() => cerrar(p.id)} onSaved={reload} />)}
-    {loading ? 'Cargando...' : <ul>{lista.filter(p => !cuentas[p.id]).map(p =>
-      <li key={p.id} className="cat-li">
-        <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
-          <small className="muted">{p.dias_entrega ? `Entregas: ${p.dias_entrega} · ` : ''}saldo: <b style={{ color: p.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(p.saldo)}</b></small></span>
-        <button onClick={() => abrir(p.id)}>ver cuenta</button>
-      </li>)}
-    </ul>}
+    <div className="row day-picker">
+      <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
+      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value, fProv, fPago); }} />
+      <button className="ghost" onClick={() => mover(1)} disabled={dia >= hoy}>Mañana ›</button>
+    </div>
+    <div className="row">
+      <Field label="Distribuidora">
+        <select value={fProv} onChange={e => { setFProv(e.target.value); refiltrar(e.target.value, fPago); }}>
+          <option value="">Todas</option>{provs.map(p => <option key={p.id} value={p.id}>{p.nombre} · debe {fmt(deudaDe(p.id))}</option>)}
+        </select>
+      </Field>
+      <Field label="Estado">
+        <select value={fPago} onChange={e => { setFPago(e.target.value); refiltrar(fProv, e.target.value); }}>
+          <option value="">Todas</option><option value="false">Pendientes de pago</option><option value="true">Pagadas</option>
+        </select>
+      </Field>
+    </div>
+    <div className="sale-box">
+      <h3>Registrar pedido</h3>
+      <div className="row">
+        <Field label="Distribuidora" error={tried && !f.proveedor_id ? 'Elegí una' : ''}>
+          <select value={f.proveedor_id} onChange={e => setF({ ...f, proveedor_id: e.target.value })} className={tried && !f.proveedor_id ? 'invalid' : ''}>
+            <option value="">Elegir…</option>{provs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </Field>
+        <Field label="Fecha del pedido"><input type="date" value={f.fecha_pedido} max={hoy} onChange={e => setF({ ...f, fecha_pedido: e.target.value })} /></Field>
+        <Field label="N° Boleta" error={tried && !f.nro.trim() ? 'Completá' : ''}>
+          <input placeholder="99001" value={f.nro} onChange={e => setF({ ...f, nro: e.target.value })} className={tried && !f.nro.trim() ? 'invalid' : ''} />
+        </Field>
+      </div>
+      {selProv.id && <p className="muted small">📦 Entregas: <b>{selProv.dias_entrega || '—'}</b>{selProv.alias ? <> · Alias: <b>{selProv.alias}</b></> : null} · Debe: <b>{fmt(deudaDe(selProv.id))}</b></p>}
+      {f.lineas.map((l, i) => (
+        <div className="line" key={i}>
+          <Field className="lp" label="Producto" error={tried && !l.producto_id ? 'Elegí uno' : ''}>
+            <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLinea(i, { producto_id: id })} />
+          </Field>
+          <Field className="lc" label="Cantidad" error={tried && !(+l.cantidad >= 1) ? 'Mín 1' : ''}>
+            <input type="number" min="1" value={l.cantidad} onChange={e => setLinea(i, { cantidad: e.target.value })} className={tried && !(+l.cantidad >= 1) ? 'invalid' : ''} />
+          </Field>
+          <Field className="lv" label="Costo unit." hint={`Lista $${costoBase(l.producto_id)}`}>
+            <input type="number" min="0" placeholder={String(costoBase(l.producto_id) || 0)} value={l.costo} onChange={e => setLinea(i, { costo: e.target.value })} />
+          </Field>
+          {f.lineas.length > 1 && <button className="ghost" title="Quitar línea" onClick={() => setF({ ...f, lineas: f.lineas.filter((_, j) => j !== i) })}>-</button>}
+        </div>))}
+      <div className="modal-actions">
+        <button className="ghost" onClick={() => setF({ ...f, lineas: [...f.lineas, { producto_id: '', cantidad: 1, costo: '' }] })}>Agregar producto</button>
+        <span style={{ flex: 1 }} />
+        <label><input type="checkbox" checked={f.pagado} onChange={e => setF({ ...f, pagado: e.target.checked })} /> Pagado</label>
+        {f.pagado && <select value={f.medio} onChange={e => setF({ ...f, medio: e.target.value })}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>}
+        <b>Total: {fmt(totalForm(f.lineas))}</b>
+        <button onClick={guardar}>Guardar pedido</button>
+      </div>
+    </div>
+    <h3>Pedidos del día</h3>
+    {lista.length === 0 ? <p className="muted">Sin pedidos este día.</p> :
+      <ul>{lista.map(c => <li key={c.id}>
+        <b>#{c.id} · {c.proveedor_nombre}</b> · boleta {c.nro_boleta} · {fmt(c.monto)}<br />
+        <small>{(c.detalles || []).map(d => `${d.producto_nombre || `prod ${d.producto_id}`} x${d.cantidad}`).join(' · ')}</small><br />
+        {c.fecha_entrega
+          ? <span className="badge ok">Entregada {(c.fecha_entrega || '').slice(0, 10)}</span>
+          : <span className="badge out">Sin entregar</span>}{' '}
+        {c.pagado
+          ? <span className="badge ok">Pagada · {MEDIO_TXT[c.medio_pago] || c.medio_pago}</span>
+          : <span className="badge out">Pendiente de pago</span>}
+        <div className="row">
+          {!c.fecha_entrega && <button onClick={() => entregar(c)}>marcar entregado</button>}
+          {!c.pagado && <button onClick={() => pagar(c)}>marcar pagado</button>}
+          <button onClick={() => abrirEdit(c)}>editar</button>
+          {!c.fecha_entrega && !c.pagado && <button onClick={() => borrar(c)}>borrar</button>}
+        </div>
+      </li>)}</ul>}
+    <Modal open={!!edit} onClose={() => setEdit(null)} title={edit ? `Pedido #${edit.id} · ${edit.proveedor_nombre}` : 'Editar'} wide>
+      <div className="grid">
+        <Field label="N° Boleta"><input value={ef.nro || ''} onChange={e => setEf({ ...ef, nro: e.target.value })} /></Field>
+        <Field label="Fecha del pedido"><input type="date" value={ef.fecha || ''} onChange={e => setEf({ ...ef, fecha: e.target.value })} /></Field>
+        <Field label="Medio de pago"><select value={ef.medio || 'transferencia'} onChange={e => setEf({ ...ef, medio: e.target.value })}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
+        <Field label="Entrega"><input value={edit?.fecha_entrega ? edit.fecha_entrega.slice(0, 10) : 'Sin entregar'} disabled /></Field>
+      </div>
+      <label><input type="checkbox" checked={!!ef.pagado} disabled={!!edit?.pagado} onChange={e => setEf({ ...ef, pagado: e.target.checked })} /> Pagado{edit?.pagado ? ' (no se puede desmarcar)' : ''}</label>
+      {!edit?.fecha_entrega && <>
+        <h3>Líneas (editable hasta entregar)</h3>
+        {(ef.lineas || []).map((l, i) => (
+          <div className="line" key={i}>
+            <Field className="lp" label="Producto"><ProdBuscador prods={prods} value={l.producto_id} onChange={id => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x) })} /></Field>
+            <Field className="lc" label="Cantidad"><input type="number" min="1" value={l.cantidad} onChange={e => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x) })} /></Field>
+            <Field className="lv" label="Costo unit."><input type="number" min="0" value={l.costo} onChange={e => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, costo: e.target.value } : x) })} /></Field>
+            {ef.lineas.length > 1 && <button className="ghost" onClick={() => setEf({ ...ef, lineas: ef.lineas.filter((_, j) => j !== i) })}>-</button>}
+          </div>))}
+        <button className="ghost" onClick={() => setEf({ ...ef, lineas: [...ef.lineas, { producto_id: '', cantidad: 1, costo: '' }] })}>Agregar producto</button>
+      </>}
+      <div className="modal-actions"><button className="ghost" onClick={() => setEdit(null)}>Cancelar</button><button onClick={guardarEdit}>Guardar cambios</button></div>
+    </Modal>
     <Modal open={open} onClose={() => setOpen(false)} title="Nueva distribuidora">
-      <Field label="Nombre*"><input placeholder="Distri Demo" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
-      <Field label="Alias" hint="Alias MP para pagarle"><input placeholder="demo.mp" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></Field>
-      <Field label="Entregas" hint="Ej: todos los días"><input placeholder="lun/mie/vie" value={f.dias_entrega} onChange={e => setF({ ...f, dias_entrega: e.target.value })} /></Field>
-      <Field label="Contacto"><input placeholder="ventas@demo.com" value={f.contacto} onChange={e => setF({ ...f, contacto: e.target.value })} /></Field>
-      <Field label="Teléfono"><input placeholder="000-000" value={f.telefono} onChange={e => setF({ ...f, telefono: e.target.value })} /></Field>
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (!f.nombre.trim()) { alert('Nombre requerido'); return; } try { await api.createProv({ ...f, nombre: f.nombre.trim(), contacto: f.contacto || null, telefono: f.telefono || null, alias: f.alias || null, dias_entrega: f.dias_entrega || null }); setF({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+      <Field label="Nombre*"><input placeholder="Distri Demo" value={nf.nombre} onChange={e => setNf({ ...nf, nombre: e.target.value })} /></Field>
+      <Field label="Alias" hint="Alias MP para pagarle"><input placeholder="demo.mp" value={nf.alias} onChange={e => setNf({ ...nf, alias: e.target.value })} /></Field>
+      <Field label="Entregas" hint="Ej: todos los días"><input placeholder="lun/mie/vie" value={nf.dias_entrega} onChange={e => setNf({ ...nf, dias_entrega: e.target.value })} /></Field>
+      <Field label="Contacto"><input placeholder="ventas@demo.com" value={nf.contacto} onChange={e => setNf({ ...nf, contacto: e.target.value })} /></Field>
+      <Field label="Teléfono"><input placeholder="000-000" value={nf.telefono} onChange={e => setNf({ ...nf, telefono: e.target.value })} /></Field>
+      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (!nf.nombre.trim()) { alert('Nombre requerido'); return; } try { await api.createProv({ ...nf, nombre: nf.nombre.trim(), contacto: nf.contacto || null, telefono: nf.telefono || null, alias: nf.alias || null, dias_entrega: nf.dias_entrega || null }); setNf({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' }); setOpen(false); loadBase(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
   </section>;
-}
-
-function CuentaBox({ p, movs, setMovs, onClose, onSaved }) {
-  const [mForm, setMForm] = useState({ tipo: 'BOLETA_001', nro: '', monto: '' });
-  const [mErr, setMErr] = useState('');
-  const guardarMov = async () => {
-    if (!mForm.nro.trim() || !(+mForm.monto > 0)) { setMErr('N° y monto mayor a 0'); return; }
-    try {
-      await api.createProvMov(p.id, { tipo: mForm.tipo, nro: mForm.nro.trim(), monto: +mForm.monto });
-      setMErr(''); setMovs(await api.provMovs(p.id)); onSaved(); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' });
-    } catch (e) { setMErr(e.message); }
-  };
-  const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
-  return <div className="sale-box">
-    <div className="sec-head"><h3>{p.nombre} — cuenta corriente</h3><button className="ghost" onClick={onClose}>ocultar</button></div>
-    <p className="muted small">
-      📦 Entregas: <b>{p.dias_entrega || '—'}</b>{p.alias ? <> · Alias: <b>{p.alias}</b></> : null}<br />
-      Pedido suma a tu deuda · Pagos y notas de crédito la restan · <b>Deuda = lo que debés hoy</b>.
-    </p>
-    <Err e={mErr} />
-    <div className="row">
-      <Field label="Tipo"><select value={mForm.tipo} onChange={e => setMForm({ ...mForm, tipo: e.target.value })}>{Object.entries(TIPO_TXT).map(([v, t]) => <option key={v} value={v}>{TIPO_COD[v]} · {t}</option>)}</select></Field>
-      <Field label="N° Boleta"><input placeholder={mForm.tipo.startsWith('PAGO') ? 'PAGO 99001' : '99001'} value={mForm.nro} onChange={e => setMForm({ ...mForm, nro: e.target.value })} /></Field>
-      <Field label="Monto"><input type="number" placeholder="0" value={mForm.monto} onChange={e => setMForm({ ...mForm, monto: e.target.value })} /></Field>
-      <button onClick={guardarMov}>Agregar</button>
-    </div>
-    <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Medio</th><th>Pagado</th><th>Boleta</th><th>Deuda</th></tr></thead>
-      <tbody>{movs.map(m => <tr key={m.id}>
-        <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_TXT[m.tipo] || TIPO_COD[m.tipo]}</td>
-        <td>{m.pago ? fmt(m.pago) : '-'}</td><td>{m.saldo_boleta ? fmt(m.saldo_boleta) : '-'}</td>
-        <td><b style={{ color: m.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(m.saldo)}</b></td></tr>)}
-      </tbody></table></div>
-    {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
-  </div>;
 }
 
 function useLoad(fn, deps = []) {

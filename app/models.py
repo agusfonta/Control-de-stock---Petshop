@@ -151,6 +151,7 @@ class MovimientoStock(Base):
     stock_anterior = Column(Integer, nullable=False)
     stock_nuevo = Column(Integer, nullable=False)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=True)
+    compra_id = Column(Integer, ForeignKey("compras.id", ondelete="SET NULL"), nullable=True)
     fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
     producto = relationship("Producto", back_populates="movimientos")
 
@@ -188,6 +189,33 @@ class MovimientoCaja(Base):
     descripcion = Column(String(250), nullable=False)
     monto = Column(Float, nullable=False)
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"), nullable=True)
+    compra_id = Column(Integer, ForeignKey("compras.id", ondelete="SET NULL"), nullable=True)
+
+
+class Compra(Base):
+    """Pedido a distribuidora: se registra, al entregarse entra stock, al pagarse sale caja."""
+    __tablename__ = "compras"
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False, index=True)
+    fecha_pedido = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    nro_boleta = Column(String(60), nullable=False)
+    fecha_entrega = Column(DateTime, nullable=True)  # null = "sin entregar"
+    pagado = Column(Boolean, nullable=False, default=False)
+    medio_pago = Column(Enum(MetodoPago), nullable=True)
+    monto = Column(Float, nullable=False, default=0)  # calculado de las líneas
+    proveedor = relationship("Proveedor")
+    detalles = relationship("DetalleCompra", back_populates="compra", cascade="all, delete-orphan")
+
+
+class DetalleCompra(Base):
+    __tablename__ = "detalles_compra"
+    id = Column(Integer, primary_key=True)
+    compra_id = Column(Integer, ForeignKey("compras.id", ondelete="CASCADE"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Integer, nullable=False)
+    costo_unitario = Column(Float, nullable=False)  # snapshot (default: precio_costo)
+    subtotal = Column(Float, nullable=False)
+    compra = relationship("Compra", back_populates="detalles")
 
 
 class User(Base):

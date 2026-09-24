@@ -38,9 +38,9 @@ Env: copiar `.env.example` a `.env`. Default `DATABASE_URL=sqlite:///./petshop.d
 ## Estructura
 
 - `app/main.py:16` — FastAPI + CORS + routers
-- `app/models.py:1` — Categoria, Producto (+`producto_categoria`, +`producto_proveedor`, `proveedor_id` principal), Cliente, Pedido/DetallePedido (`MetodoPago`: efectivo/tarjeta-legacy/transferencia/mercadopago/debito/credito), MovimientoStock, Proveedor (+`alias`, `dias_entrega`), MovimientoProveedor (cta.cte 001-004), MovimientoCaja (ENTRADA/SALIDA por medio), User
+- `app/models.py:1` — Categoria, Producto (+`producto_categoria`, +`producto_proveedor`, `proveedor_id` principal), Cliente, Pedido/DetallePedido (`MetodoPago`: efectivo/tarjeta-legacy/transferencia/mercadopago/debito/credito), MovimientoStock (+`compra_id`), Proveedor (+`alias`, `dias_entrega`), Compra/DetalleCompra (pedido→entrega→pago), MovimientoCaja (+`compra_id`), User
 - `app/schemas.py:1` — Pydantic v2 estricta
-- `app/routers/` — `auth.py`, `categories.py`, `products.py`, `customers.py`, `orders.py` (ventas escriben en caja), `inventory.py` (stock + `/proveedores` con cta.cte + `/reportes`), `caja.py` (caja diaria, gastos manuales)
+- `app/routers/` — `auth.py`, `categories.py`, `products.py`, `customers.py`, `orders.py` (ventas escriben en caja), `inventory.py` (stock + `/proveedores` + `/reportes`), `caja.py` (caja diaria, gastos manuales), `compras.py` (pedidos a distribuidora: registra, entrega entra stock, paga sale caja)
 - `app/core/` — `config.py`, `database.py`, `security.py` | `app/deps.py:23` — `require_roles()`
 - `app/services/discounts.py` — `aplicar_descuento`
 - `frontend/src/api.js:1` — único cliente HTTP (Bearer, maneja 401/403) | `frontend/src/App.jsx:13` — tabs Principal / Stock / Clientes / Distribuidoras / Historial (caja). Pedidos del cliente en modal; categoría nueva desde el filtro de Stock; Distribuidoras con varias cuentas abiertas a la vez (ocultar en el banner, fila gris se esconde); medios como EF/TR/MP/DB/CD (`MEDIO_TXT`, sin tarjeta en selects); sin tab Usuarios (gestión por API) | `frontend/src/index.css` — un solo layout compu+tablet apaisada: tablas nuevas van en `.tbl-wrap`, táctil solo bajo `@media (pointer:coarse)`

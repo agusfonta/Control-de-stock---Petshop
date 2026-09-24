@@ -4,7 +4,7 @@ import logging
 from app.core.config import settings
 from app.core.database import Base, engine
 from app import models  # noqa: registra modelos
-from app.routers import categories, products, customers, orders, inventory, auth, caja
+from app.routers import categories, products, customers, orders, inventory, auth, caja, compras
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,6 +25,7 @@ app.include_router(inventory.router)
 app.include_router(inventory.prov)
 app.include_router(inventory.rep)
 app.include_router(caja.router)
+app.include_router(compras.router)
 
 @app.get("/health")
 def health():

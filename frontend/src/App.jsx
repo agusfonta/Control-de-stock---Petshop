@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getSession, setSession } from './api';
 
-const TABS = ['Principal', 'Stock', 'Clientes', 'Distribuidoras'];
+const TABS = ['Principal', 'Stock', 'Clientes', 'Distribuidoras', 'Historial'];
 
 // Estado de Ventas fuera del componente para persistir entre cambios de pestaña
 const ventasState = {
@@ -15,7 +15,7 @@ export default function App() {
   const [session, setSess] = useState(getSession);
   const [passOpen, setPassOpen] = useState(false);
   const [pc, setPc] = useState({ current: '', next: '' });
-  const icons = { 'Principal': '🧾', 'Stock': '📦', 'Clientes': '🐾', 'Distribuidoras': '🚚' };
+  const icons = { 'Principal': '🧾', 'Stock': '📦', 'Clientes': '🐾', 'Distribuidoras': '🚚', 'Historial': '📅' };
   useEffect(() => {
     const off = () => setSess(null);
     window.addEventListener('auth-expired', off);
@@ -40,10 +40,11 @@ export default function App() {
       </Modal>
       <nav>{tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{icons[t]} {t}</button>)}</nav>
       <main>
-        {tab === 'Principal' && <Principal />}
+        {tab === 'Principal' && <Ventas />}
         {tab === 'Stock' && <Productos isAdmin={session.rol === 'admin'} />}
         {tab === 'Clientes' && <Clientes />}
         {tab === 'Distribuidoras' && <Proveedores />}
+        {tab === 'Historial' && <Caja />}
       </main>
     </div>
   );
@@ -81,10 +82,7 @@ function Login({ onOk }) {
   );
 }
 
-/* ---------- Principal: ventas del momento + caja del día ---------- */
-function Principal() {
-  return <div className="stack"><Ventas /><Caja /></div>;
-}
+/* ---------- Principal eliminado: Ventas va directo; Caja vive en Historial ---------- */
 
 /* ---------- Distribuidoras / Cuenta corriente (paso 2) ---------- */
 const TIPO_COD = { BOLETA_001: '001', PAGO_EFECTIVO_002: '002', PAGO_TRANSFER_003: '003', NOTA_CREDITO_004: '004' };
@@ -117,20 +115,6 @@ function Proveedores() {
   return <section>
     <div className="sec-head"><h2>Distribuidoras</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
-    <div className="row">
-      <Field label="Filtrar por distribuidora">
-        <select value={selId || ''} onChange={e => ver(e.target.value ? +e.target.value : null)}>
-          <option value="">Todas</option>{(data || []).map(p => <option key={p.id} value={p.id}>{p.nombre} · debe {fmt(p.saldo)}</option>)}
-        </select>
-      </Field>
-    </div>
-    {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
-      <li key={p.id} className="cat-li">
-        <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
-          <small className="muted">{p.dias_entrega ? `Entregas: ${p.dias_entrega} · ` : ''}saldo: <b style={{ color: p.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(p.saldo)}</b></small></span>
-        <button onClick={() => ver(p.id)}>{selId === p.id ? 'ocultar' : 'ver cuenta'}</button>
-      </li>)}
-    </ul>}
     {sel && <div className="sale-box">
       <h3>{sel.nombre} — cuenta corriente</h3>
       <p className="muted small">
@@ -152,6 +136,13 @@ function Proveedores() {
         </tbody></table></div>
       {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
     </div>}
+    {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
+      <li key={p.id} className="cat-li">
+        <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
+          <small className="muted">{p.dias_entrega ? `Entregas: ${p.dias_entrega} · ` : ''}saldo: <b style={{ color: p.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(p.saldo)}</b></small></span>
+        <button onClick={() => ver(p.id)}>{selId === p.id ? 'ocultar' : 'ver cuenta'}</button>
+      </li>)}
+    </ul>}
     <Modal open={open} onClose={() => setOpen(false)} title="Nueva distribuidora">
       <Field label="Nombre*"><input placeholder="Distri Demo" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
       <Field label="Alias" hint="Alias MP para pagarle"><input placeholder="demo.mp" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></Field>
@@ -230,31 +221,7 @@ function Modal({ open, onClose, title, children, wide }) {
   );
 }
 
-/* ---------- Categorías ---------- */
-function Categorias({ isAdmin }) {
-  const { data, err, loading, reload } = useLoad(api.cats);
-  const [open, setOpen] = useState(false);
-  const [nombre, setNombre] = useState(''); const [desc, setDesc] = useState('');
-  const crear = async () => {
-    if (errNombre(nombre, 2)) return;
-    try { await api.createCat({ nombre: nombre.trim(), descripcion: desc || null }); setNombre(''); setDesc(''); setOpen(false); reload(); }
-    catch (e) { alert(e.message); }
-  };
-  return <section>
-    <div className="sec-head"><h2>Categorías</h2><button className="fab" onClick={() => setOpen(true)}>+ Nueva</button></div>
-    <Err e={err} />
-    {loading ? 'Cargando...' : <ul>{(data || []).map(c =>
-      <li key={c.id} className="cat-li"><span>{c.nombre} — {c.descripcion || '-'}</span>{isAdmin && <button className="del" title="Eliminar categoría (los productos quedan Sin categoría)" onClick={async () => { if (confirm('Eliminar categoría? Los productos quedarán "Sin categoría" y podrás asignarles otra.')) { try { await api.deleteCat(c.id); reload(); } catch (e) { alert(e.message); } } }}>✕</button>}</li>)}
-    </ul>}
-    <Modal open={open} onClose={() => setOpen(false)} title="Nueva categoría">
-      <Field label="Nombre" error={nombre ? errNombre(nombre, 2) : ''}>
-        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} className={nombre && errNombre(nombre, 2) ? 'invalid' : ''} />
-      </Field>
-      <input placeholder="Descripción" value={desc} onChange={e => setDesc(e.target.value)} />
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={crear}>Guardar</button></div>
-    </Modal>
-  </section>;
-}
+/* ---------- Categorías: crear desde el filtro de Stock; eliminar solo por API ---------- */
 
 /* ---------- Productos ---------- */
 function Productos({ isAdmin }) {
@@ -262,7 +229,8 @@ function Productos({ isAdmin }) {
   const [allProvs, setAllProvs] = useState([]);
   const [search, setSearch] = useState(''); const [cat, setCat] = useState(''); const [prov, setProv] = useState(''); const [bajo, setBajo] = useState(false);
   const [items, setItems] = useState([]); const [err, setErr] = useState('');
-  const [showCats, setShowCats] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
+  const [catNombre, setCatNombre] = useState(''); const [catDesc, setCatDesc] = useState('');
   const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', marca: '', unidad: 'unidad', precio_costo: 0, precio_venta: 100, stock: 0, stock_minimo: 10, imagen_url: '', categoria_ids: [], proveedor_id: '', proveedor_ids_alt: [] });
   const [open, setOpen] = useState(false);
   const [editProd, setEditProd] = useState(null);
@@ -323,12 +291,10 @@ function Productos({ isAdmin }) {
   };
   return <section>
     <div className="sec-head"><h2>Stock</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
-    <div className="row"><button className="ghost" onClick={() => setShowCats(!showCats)}>🏷️ {showCats ? 'Ocultar categorías' : 'Ver categorías'}</button></div>
-    {showCats && <Categorias isAdmin={isAdmin} />}
     <Err e={err} />
     <div className="row">
       <input placeholder="Buscar nombre/marca" value={search} onChange={e => setSearch(e.target.value)} />
-      <select value={cat} onChange={e => setCat(e.target.value)}><option value="">Todas las categorías</option>{allCats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select>
+      <select value={cat} onChange={e => { if (e.target.value === '__nueva__') { setCatNombre(''); setCatDesc(''); setCatOpen(true); } else setCat(e.target.value); }}><option value="">Todas las categorías</option>{allCats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}<option value="__nueva__">＋ Crear nueva…</option></select>
       <select value={prov} onChange={e => setProv(e.target.value)}><option value="">Todas las distribuidoras</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
       <label><input type="checkbox" checked={bajo} onChange={e => setBajo(e.target.checked)} /> stock bajo</label>
       <button onClick={load}>Filtrar</button>
@@ -341,6 +307,13 @@ function Productos({ isAdmin }) {
         <td>{p.stock === 0 ? <span className="badge out">Sin stock</span> : <span className="badge ok">Disponible</span>}</td>
         <td><button onClick={() => openEdit(p)}>editar</button></td></tr>)}
       </tbody></table></div>
+    <Modal open={catOpen} onClose={() => setCatOpen(false)} title="Nueva categoría">
+      <Field label="Nombre" error={catNombre ? errNombre(catNombre, 2) : ''}>
+        <input placeholder="Nombre" value={catNombre} onChange={e => setCatNombre(e.target.value)} className={catNombre && errNombre(catNombre, 2) ? 'invalid' : ''} />
+      </Field>
+      <Field label="Descripción"><input placeholder="Descripción" value={catDesc} onChange={e => setCatDesc(e.target.value)} /></Field>
+      <div className="modal-actions"><button className="ghost" onClick={() => setCatOpen(false)}>Cancelar</button><button onClick={async () => { if (errNombre(catNombre, 2)) return; try { const nc = await api.createCat({ nombre: catNombre.trim(), descripcion: catDesc || null }); setAllCats(await api.cats().catch(() => [])); setCat(String(nc.id)); setCatOpen(false); load(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+    </Modal>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo producto" wide>
       <div className="grid">
         <Field label="SKU" hint="Código único del producto, opcional" error={(form.sku || '').length > 60 ? 'Máximo 60 caracteres' : ''}><input placeholder="Ej: RC-MINI-3KG" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></Field>
@@ -572,7 +545,7 @@ function Ventas() {
           </div>
         </Field>
         <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); }}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option><option>debito</option><option>credito</option></select></Field>
-        <Field label="Descuento del pedido" hint="EF/TR pre-carga 10% demo, editable"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
+        <Field label="Descuento del pedido"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
         <Field label="Valor del descuento" hint="Si no hay dto, 0" error={eDtoPedido}><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} className={eDtoPedido ? 'invalid' : ''} /></Field>
       </div>
       {lineas.map((l, i) => {
@@ -583,7 +556,7 @@ function Ventas() {
           <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLineasP(lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x))} />
         </Field>
         <Field className="lc" label="Cantidad" hint="Unidades" error={eCant}><input type="number" min="1" value={l.cantidad} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} className={eCant ? 'invalid' : ''} /></Field>
-        <Field className="ld" label="Descuento" hint="Se aplica al producto"><select value={l.descuento_tipo} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
+        <Field className="ld" label="Descuento por producto"><select value={l.descuento_tipo} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
         <Field className="lv" label="Valor" hint="Del dto línea" error={eDtoL}><input type="number" value={l.descuento_valor} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} className={eDtoL ? 'invalid' : ''} /></Field>
         {/* Solo mostrar el botón quitar si hay más de 1 línea */}
         {lineas.length > 1 && (
@@ -626,17 +599,16 @@ function Clientes() {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
   const [q, setQ] = useState('');
-  const [selId, setSelId] = useState(null);
+  const [selCli, setSelCli] = useState(null);
   const [peds, setPeds] = useState([]);
   const [page, setPage] = useState(0);
   const [detId, setDetId] = useState(null); // pedido con detalle desplegado
   const PAGE = 5;
 
-  const toggle = async (c) => {
-    if (selId === c.id) { setSelId(null); setPeds([]); setDetId(null); return; } // esconder al segundo clic
+  const verPeds = async (c) => {
     try {
       const list = await api.pedidosCliente(c.id);
-      setSelId(c.id); setPeds(list); setPage(0); setDetId(null);
+      setSelCli(c); setPeds(list); setPage(0); setDetId(null);
     } catch (e) { alert(e.message); }
   };
   const dtoTxt = (t, v) => t === 'ningun' ? 'sin dto' : t === 'porcentaje' ? `${v}%` : `$${v}`;
@@ -690,7 +662,7 @@ function Clientes() {
     <div className="sec-head"><h2>Clientes</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
     <div className="row">
-      <input placeholder="Buscar nombre, email o DNI" value={q} onChange={e => setQ(e.target.value)} />
+      <input placeholder="Buscar nombre, email o DNI" value={q} onChange={e => setQ(e.target.value)} style={{ flex: '1 1 300px' }} />
     </div>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo cliente">
       <div className="grid">
@@ -707,12 +679,15 @@ function Clientes() {
         <tr>
           <td>{c.nombre}</td><td>{c.email}</td><td>{c.dni}</td>
           <td>{c.telefono || '-'}</td><td>{c.direccion || '-'}</td>
-          <td><button onClick={() => toggle(c)}>{selId === c.id ? 'ocultar' : 'ver pedidos'}</button></td>
+          <td><button onClick={() => verPeds(c)}>ver pedidos</button></td>
         </tr>
-        {selId === c.id && <tr><td colSpan={6}>{pedsBlock}</td></tr>}
       </tbody>)}
     </table></div>
     {rows.length === 0 && <p className="muted">Sin clientes para este filtro.</p>}
+    <Modal open={!!selCli} onClose={() => setSelCli(null)} title={selCli ? `Pedidos · ${selCli.nombre}` : 'Pedidos'} wide>
+      {pedsBlock}
+      <div className="modal-actions"><button className="ghost" onClick={() => setSelCli(null)}>Cerrar</button></div>
+    </Modal>
   </section>;
 }
 
@@ -750,7 +725,7 @@ function Caja() {
   const entradas = movs.filter(m => m.tipo === 'ENTRADA');
   const salidas = movs.filter(m => m.tipo === 'SALIDA');
   return <section>
-    <div className="sec-head"><h2>{dia === hoy ? 'Caja · Hoy' : `Caja · ${dia}`}</h2>{dia === hoy
+    <div className="sec-head"><h2>{dia === hoy ? 'Historial' : `Historial · ${dia}`}</h2>{dia === hoy
       ? <button className="fab" disabled>Hoy</button>
       : <button className="fab" onClick={() => { setDia(hoy); load(hoy); }}>‹ Volver a hoy</button>}</div>
     <Err e={err} />

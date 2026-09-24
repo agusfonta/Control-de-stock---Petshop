@@ -43,7 +43,7 @@ Env: copiar `.env.example` a `.env`. Default `DATABASE_URL=sqlite:///./petshop.d
 - `app/routers/` — `auth.py`, `categories.py`, `products.py`, `customers.py`, `orders.py` (ventas escriben en caja), `inventory.py` (stock + `/proveedores` con cta.cte + `/reportes`), `caja.py` (caja diaria, gastos manuales)
 - `app/core/` — `config.py`, `database.py`, `security.py` | `app/deps.py:23` — `require_roles()`
 - `app/services/discounts.py` — `aplicar_descuento`
-- `frontend/src/api.js:1` — único cliente HTTP (Bearer, maneja 401/403) | `frontend/src/App.jsx:13` — tabs Principal (Ventas+Caja) / Stock / Clientes / Distribuidoras. Ventas se listan solo en Principal; Categorías vive dentro de Stock; sin tab Usuarios (gestión por API) | `frontend/src/index.css` — un solo layout compu+tablet apaisada: tablas nuevas van en `.tbl-wrap`, táctil solo bajo `@media (pointer:coarse)`
+- `frontend/src/api.js:1` — único cliente HTTP (Bearer, maneja 401/403) | `frontend/src/App.jsx:13` — tabs Principal / Stock / Clientes / Distribuidoras / Historial (caja). Pedidos del cliente en modal; categoría nueva desde el filtro de Stock; cuenta primero en Distribuidoras; sin tab Usuarios (gestión por API) | `frontend/src/index.css` — un solo layout compu+tablet apaisada: tablas nuevas van en `.tbl-wrap`, táctil solo bajo `@media (pointer:coarse)`
 
 ## Skills Disponibles
 

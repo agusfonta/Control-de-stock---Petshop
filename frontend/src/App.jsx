@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getSession, setSession } from './api';
 
-const TABS = ['Productos', 'Ventas', 'Historial', 'Clientes', 'Categorías'];
+const TABS = ['Productos', 'Ventas', 'Caja', 'Historial', 'Clientes', 'Categorías', 'Proveedores'];
 
 // Estado de Ventas fuera del componente para persistir entre cambios de pestaña
 const ventasState = {
@@ -15,7 +15,7 @@ export default function App() {
   const [session, setSess] = useState(getSession);
   const [passOpen, setPassOpen] = useState(false);
   const [pc, setPc] = useState({ current: '', next: '' });
-  const icons = { 'Productos': '🛒', 'Categorías': '🏷️', 'Ventas': '🧾', 'Clientes': '🐾', 'Historial': '📅', 'Usuarios': '👤' };
+  const icons = { 'Productos': '🛒', 'Categorías': '🏷️', 'Ventas': '🧾', 'Caja': '💰', 'Clientes': '🐾', 'Historial': '📅', 'Usuarios': '👤', 'Proveedores': '🚚' };
   useEffect(() => {
     const off = () => setSess(null);
     window.addEventListener('auth-expired', off);
@@ -43,9 +43,11 @@ export default function App() {
         {tab === 'Productos' && <Productos isAdmin={session.rol === 'admin'} />}
         {tab === 'Categorías' && <Categorias isAdmin={session.rol === 'admin'} />}
         {tab === 'Ventas' && <Ventas />}
+        {tab === 'Caja' && <Caja />}
         {tab === 'Clientes' && <Clientes />}
         {tab === 'Historial' && <Stock />}
         {tab === 'Usuarios' && <Usuarios />}
+        {tab === 'Proveedores' && <Proveedores />}
       </main>
     </div>
   );
@@ -53,8 +55,13 @@ export default function App() {
 
 function Login({ onOk }) {
   const [u, setU] = useState(''); const [p, setP] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [tU, setTU] = useState(false); const [tP, setTP] = useState(false);
+  const eU = tU && !u.trim() ? 'Ingresá tu usuario' : '';
+  const eP = tP && !p ? 'Ingresá tu contraseña' : '';
   const go = async (e) => {
-    e?.preventDefault(); setErr(''); setBusy(true);
+    e?.preventDefault(); setErr(''); setTU(true); setTP(true);
+    if (!u.trim() || !p) return;
+    setBusy(true);
     try {
       const r = await api.login(u, p);
       const s = { token: r.access_token, username: r.username, rol: r.rol };
@@ -66,8 +73,10 @@ function Login({ onOk }) {
       <form className="login-card" onSubmit={go}>
         <img src="/logo.png" alt="AniMall" className="logo-img lg" />
         <p className="muted">Ingresá para gestionar stock y ventas</p>
-        <input placeholder="Usuario" value={u} onChange={e => setU(e.target.value)} autoFocus />
-        <input placeholder="Contraseña" type="password" value={p} onChange={e => setP(e.target.value)} />
+        <input placeholder="Usuario" value={u} onChange={e => setU(e.target.value)} onBlur={() => setTU(true)} autoFocus className={eU ? 'invalid' : ''} />
+        {eU && <small className="field-err">{eU}</small>}
+        <input placeholder="Contraseña" type="password" value={p} onChange={e => setP(e.target.value)} onBlur={() => setTP(true)} className={eP ? 'invalid' : ''} />
+        {eP && <small className="field-err">{eP}</small>}
         {err && <p className="err">{err}</p>}
         <button disabled={busy}>{busy ? 'Ingresando...' : 'Ingresar'}</button>
         <p className="muted small">Primera vez: el seed crea admin / admin123</p>
@@ -86,10 +95,79 @@ function Usuarios() {
     <Err e={err} />
     {loading ? 'Cargando...' : <ul>{(data || []).map(u => <li key={u.id}>{u.username} · {u.rol} · {u.activo ? 'activo' : 'inactivo'}</li>)}</ul>}
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo usuario">
-      <input placeholder="Usuario (mín 3)" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} />
-      <input placeholder="Contraseña (mín 6)" type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
+      <Field label="Usuario" error={errNombre(f.username, 3)}>
+        <input placeholder="Usuario (mín 3)" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} className={errNombre(f.username, 3) && f.username ? 'invalid' : ''} />
+      </Field>
+      <Field label="Contraseña" error={!(f.password || '').trim() ? 'Completá este campo' : f.password.length < 6 ? 'Mínimo 6 caracteres' : ''}>
+        <input placeholder="Contraseña (mín 6)" type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
+      </Field>
       <select value={f.rol} onChange={e => setF({ ...f, rol: e.target.value })}><option value="vendedor">vendedor</option><option value="admin">admin</option></select>
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { try { await api.register(f); setF({ username: '', password: '', rol: 'vendedor' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (errNombre(f.username, 3) || (f.password || '').length < 6) { alert('Corregí los campos marcados en rojo'); return; } try { await api.register(f); setF({ username: '', password: '', rol: 'vendedor' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+    </Modal>
+  </section>;
+}
+
+/* ---------- Proveedores / Cuenta corriente (paso 2) ---------- */
+const TIPO_COD = { BOLETA_001: '001', PAGO_EFECTIVO_002: '002', PAGO_TRANSFER_003: '003', NOTA_CREDITO_004: '004' };
+const TIPO_TXT = { BOLETA_001: 'Pedido', PAGO_EFECTIVO_002: 'Pago en Efectivo', PAGO_TRANSFER_003: 'Pago Transferencia', NOTA_CREDITO_004: 'Nota de Crédito' };
+
+function Proveedores() {
+  const { data, err, loading, reload } = useLoad(api.saldosProv);
+  const [selId, setSelId] = useState(null);
+  const [movs, setMovs] = useState([]);
+  const [mErr, setMErr] = useState('');
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' });
+  const [mForm, setMForm] = useState({ tipo: 'BOLETA_001', nro: '', monto: '' });
+
+  const sel = (data || []).find(p => p.id === selId);
+  const ver = async (id) => {
+    if (selId === id) { setSelId(null); setMovs([]); return; }
+    try { setMErr(''); setMovs(await api.provMovs(id)); setSelId(id); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' }); }
+    catch (e) { setMErr(e.message); }
+  };
+  const guardarMov = async () => {
+    if (!mForm.nro.trim() || !(+mForm.monto > 0)) { setMErr('N° y monto mayor a 0'); return; }
+    try {
+      await api.createProvMov(selId, { tipo: mForm.tipo, nro: mForm.nro.trim(), monto: +mForm.monto });
+      setMovs(await api.provMovs(selId)); reload(); setMForm({ tipo: 'BOLETA_001', nro: '', monto: '' });
+    } catch (e) { setMErr(e.message); }
+  };
+  const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  return <section>
+    <div className="sec-head"><h2>Proveedores</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <Err e={err} />
+    {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
+      <li key={p.id} className="cat-li">
+        <span><b>{p.nombre}</b> {p.alias ? <small className="muted">· {p.alias}</small> : null}<br />
+          <small className="muted">{p.dias_entrega ? `Entregas: ${p.dias_entrega} · ` : ''}saldo: <b style={{ color: p.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(p.saldo)}</b></small></span>
+        <button onClick={() => ver(p.id)}>{selId === p.id ? 'ocultar' : 'ver cuenta'}</button>
+      </li>)}
+    </ul>}
+    {sel && <div className="sale-box">
+      <h3>{sel.nombre} — cuenta corriente</h3>
+      <Err e={mErr} />
+      <div className="row">
+        <Field label="Tipo"><select value={mForm.tipo} onChange={e => setMForm({ ...mForm, tipo: e.target.value })}>{Object.entries(TIPO_TXT).map(([v, t]) => <option key={v} value={v}>{TIPO_COD[v]} · {t}</option>)}</select></Field>
+        <Field label="N° Boleta"><input placeholder={mForm.tipo.startsWith('PAGO') ? 'PAGO 99001' : '99001'} value={mForm.nro} onChange={e => setMForm({ ...mForm, nro: e.target.value })} /></Field>
+        <Field label="Monto"><input type="number" placeholder="0" value={mForm.monto} onChange={e => setMForm({ ...mForm, monto: e.target.value })} /></Field>
+        <button onClick={guardarMov}>Agregar</button>
+      </div>
+      <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>N° Boleta</th><th>Cód</th><th>Pago</th><th>Saldo boleta</th><th>Saldo</th></tr></thead>
+        <tbody>{movs.map(m => <tr key={m.id}>
+          <td>{(m.fecha || '').slice(0, 10)}</td><td>{m.nro}</td><td>{TIPO_COD[m.tipo]}</td>
+          <td>{m.pago ? fmt(m.pago) : '-'}</td><td>{m.saldo_boleta ? fmt(m.saldo_boleta) : '-'}</td>
+          <td><b style={{ color: m.saldo > 0 ? '#c0392b' : 'inherit' }}>{fmt(m.saldo)}</b></td></tr>)}
+        </tbody></table></div>
+      {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
+    </div>}
+    <Modal open={open} onClose={() => setOpen(false)} title="Nuevo proveedor">
+      <Field label="Nombre*"><input placeholder="Distri Demo" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
+      <Field label="Alias" hint="Alias MP para pagarle"><input placeholder="demo.mp" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></Field>
+      <Field label="Entregas" hint="Ej: todos los días"><input placeholder="lun/mie/vie" value={f.dias_entrega} onChange={e => setF({ ...f, dias_entrega: e.target.value })} /></Field>
+      <Field label="Contacto"><input placeholder="ventas@demo.com" value={f.contacto} onChange={e => setF({ ...f, contacto: e.target.value })} /></Field>
+      <Field label="Teléfono"><input placeholder="000-000" value={f.telefono} onChange={e => setF({ ...f, telefono: e.target.value })} /></Field>
+      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { if (!f.nombre.trim()) { alert('Nombre requerido'); return; } try { await api.createProv({ ...f, nombre: f.nombre.trim(), contacto: f.contacto || null, telefono: f.telefono || null, alias: f.alias || null, dias_entrega: f.dias_entrega || null }); setF({ nombre: '', contacto: '', telefono: '', alias: '', dias_entrega: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
   </section>;
 }
@@ -106,9 +184,48 @@ function useLoad(fn, deps = []) {
 
 function Err({ e }) { return e ? <p className="err">{e}</p> : null; }
 
-function Field({ label, hint, className, children }) {
-  return <label className={'field' + (className ? ' ' + className : '')}><span>{label}{hint && <small> — {hint}</small>}</span>{children}</label>;
+function Field({ label, hint, error, className, children }) {
+  return <label className={'field' + (className ? ' ' + className : '')}><span>{label}{hint && <small> — {hint}</small>}</span>{children}{error && <small className="field-err">{error}</small>}</label>;
 }
+
+/* Validadores inline compartidos: devuelven '' si ok o el mensaje a mostrar debajo */
+const isEmailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || '').trim());
+const errNombre = (v, min = 2) => {
+  if (!(v || '').trim()) return 'Completá este campo';
+  if ((v || '').trim().length < min) return `Mínimo ${min} caracteres`;
+  return '';
+};
+const errUrl = (v) => {
+  if (!v) return '';
+  const s = String(v).trim();
+  if (!s) return '';
+  return (s.startsWith('http://') || s.startsWith('https://')) ? '' : 'Debe empezar con http(s)://';
+};
+const errMayor0 = (v, etiqueta = 'Debe ser mayor a 0') => {
+  if (v === '' || v === null || v === undefined) return 'Completá este campo';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 'Ingresá un número válido';
+  return n > 0 ? '' : etiqueta;
+};
+const errMayorIgual0 = (v) => {
+  if (v === '' || v === null || v === undefined) return 'Completá este campo';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 'Ingresá un número válido';
+  return n >= 0 ? '' : 'No puede ser negativo';
+};
+const errEnteroMin = (v, min = 1) => {
+  if (v === '' || v === null || v === undefined) return 'Completá este campo';
+  const n = Number(v);
+  if (!Number.isInteger(n)) return 'Ingresá un número entero';
+  return n >= min ? '' : `Mínimo ${min}`;
+};
+const errDtoValor = (tipo, valor) => {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return 'Ingresá un número válido';
+  if (tipo === 'ningun') return n === 0 ? '' : 'Si es sin dto, valor 0';
+  if (tipo === 'porcentaje') return (n >= 0 && n <= 100) ? '' : 'De 0 a 100';
+  return n >= 0 ? '' : 'No puede ser negativo';
+};
 
 function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
@@ -128,7 +245,8 @@ function Categorias({ isAdmin }) {
   const [open, setOpen] = useState(false);
   const [nombre, setNombre] = useState(''); const [desc, setDesc] = useState('');
   const crear = async () => {
-    try { await api.createCat({ nombre, descripcion: desc || null }); setNombre(''); setDesc(''); setOpen(false); reload(); }
+    if (errNombre(nombre, 2)) return;
+    try { await api.createCat({ nombre: nombre.trim(), descripcion: desc || null }); setNombre(''); setDesc(''); setOpen(false); reload(); }
     catch (e) { alert(e.message); }
   };
   return <section>
@@ -138,7 +256,9 @@ function Categorias({ isAdmin }) {
       <li key={c.id} className="cat-li"><span>{c.nombre} — {c.descripcion || '-'}</span>{isAdmin && <button className="del" title="Eliminar categoría (los productos quedan Sin categoría)" onClick={async () => { if (confirm('Eliminar categoría? Los productos quedarán "Sin categoría" y podrás asignarles otra.')) { try { await api.deleteCat(c.id); reload(); } catch (e) { alert(e.message); } } }}>✕</button>}</li>)}
     </ul>}
     <Modal open={open} onClose={() => setOpen(false)} title="Nueva categoría">
-      <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+      <Field label="Nombre" error={nombre ? errNombre(nombre, 2) : ''}>
+        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} className={nombre && errNombre(nombre, 2) ? 'invalid' : ''} />
+      </Field>
       <input placeholder="Descripción" value={desc} onChange={e => setDesc(e.target.value)} />
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={crear}>Guardar</button></div>
     </Modal>
@@ -148,9 +268,10 @@ function Categorias({ isAdmin }) {
 /* ---------- Productos ---------- */
 function Productos({ isAdmin }) {
   const [allCats, setAllCats] = useState([]);
-  const [search, setSearch] = useState(''); const [cat, setCat] = useState(''); const [bajo, setBajo] = useState(false);
+  const [allProvs, setAllProvs] = useState([]);
+  const [search, setSearch] = useState(''); const [cat, setCat] = useState(''); const [prov, setProv] = useState(''); const [bajo, setBajo] = useState(false);
   const [items, setItems] = useState([]); const [err, setErr] = useState('');
-  const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', marca: '', unidad: 'unidad', precio_costo: 0, precio_venta: 100, stock: 0, stock_minimo: 10, imagen_url: '', categoria_ids: [] });
+  const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', marca: '', unidad: 'unidad', precio_costo: 0, precio_venta: 100, stock: 0, stock_minimo: 10, imagen_url: '', categoria_ids: [], proveedor_id: '', proveedor_ids_alt: [] });
   const [open, setOpen] = useState(false);
   const [editProd, setEditProd] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -173,11 +294,15 @@ function Productos({ isAdmin }) {
       unidad: p.unidad, precio_costo: p.precio_costo, precio_venta: p.precio_venta,
       stock_minimo: p.stock_minimo, imagen_url: p.imagen_url || '', sku: p.sku || '',
       categoria_ids: (p.categorias || []).map(c => c.id),
+      proveedor_id: p.proveedor_id || '',
+      proveedor_ids_alt: p.proveedor_ids_alt || [],
     });
   };
   const guardarEdit = async () => {
+    const hayErr = errNombre(editForm.nombre || '', 2) || errMayor0(editForm.precio_venta, 'Debe ser mayor a 0') || errMayorIgual0(editForm.precio_costo) || errEnteroMin(editForm.stock_minimo, 0) || errUrl(editForm.imagen_url);
+    if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; }
     try {
-      const payload = { ...editForm, precio_costo: +editForm.precio_costo, precio_venta: +editForm.precio_venta, stock_minimo: +editForm.stock_minimo, sku: editForm.sku || null, imagen_url: editForm.imagen_url || null, categoria_ids: editForm.categoria_ids.map(Number) };
+      const payload = { ...editForm, precio_costo: +editForm.precio_costo, precio_venta: +editForm.precio_venta, stock_minimo: +editForm.stock_minimo, sku: editForm.sku || null, imagen_url: editForm.imagen_url || null, categoria_ids: editForm.categoria_ids.map(Number), proveedor_id: editForm.proveedor_id ? +editForm.proveedor_id : null, proveedor_ids_alt: (editForm.proveedor_ids_alt || []).map(Number) };
       await api.patchProd(editProd.id, payload); setEditProd(null); load();
     } catch (e) { alert(e.message); }
   };
@@ -188,16 +313,19 @@ function Productos({ isAdmin }) {
   };
 
   const loadCats = async () => setAllCats(await api.cats().catch(() => []));
+  const loadProvs = async () => setAllProvs(await api.proveedores().catch(() => []));
   const load = async () => {
     setErr('');
-    try { setItems(await api.prods({ search: search || undefined, categoria: cat || undefined, stock_bajo: bajo || undefined, solo_activos: true })); }
+    try { setItems(await api.prods({ search: search || undefined, categoria: cat || undefined, proveedor: prov || undefined, stock_bajo: bajo || undefined, solo_activos: true })); }
     catch (e) { setErr(e.message); }
   };
-  useEffect(() => { loadCats(); load(); }, []);
+  useEffect(() => { loadCats(); loadProvs(); load(); }, []);
 
   const crear = async () => {
+    const hayErr = errNombre(form.nombre, 2) || errMayor0(form.precio_venta, 'Debe ser mayor a 0') || errMayorIgual0(form.precio_costo) || errEnteroMin(form.stock, 0) || errEnteroMin(form.stock_minimo, 0) || errUrl(form.imagen_url);
+    if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; }
     try {
-      const payload = { ...form, precio_costo: +form.precio_costo, precio_venta: +form.precio_venta, stock: +form.stock, stock_minimo: +form.stock_minimo, sku: form.sku || null, imagen_url: form.imagen_url || null, categoria_ids: form.categoria_ids.map(Number) };
+      const payload = { ...form, precio_costo: +form.precio_costo, precio_venta: +form.precio_venta, stock: +form.stock, stock_minimo: +form.stock_minimo, sku: form.sku || null, imagen_url: form.imagen_url || null, categoria_ids: form.categoria_ids.map(Number), proveedor_id: form.proveedor_id ? +form.proveedor_id : null, proveedor_ids_alt: (form.proveedor_ids_alt || []).map(Number) };
       await api.createProd(payload); setOpen(false); load();
     } catch (e) { alert(e.message); }
   };
@@ -207,52 +335,66 @@ function Productos({ isAdmin }) {
     <div className="row">
       <input placeholder="Buscar nombre/marca" value={search} onChange={e => setSearch(e.target.value)} />
       <select value={cat} onChange={e => setCat(e.target.value)}><option value="">Todas las categorías</option>{allCats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select>
+      <select value={prov} onChange={e => setProv(e.target.value)}><option value="">Todos los proveedores</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
       <label><input type="checkbox" checked={bajo} onChange={e => setBajo(e.target.checked)} /> stock bajo</label>
       <button onClick={load}>Filtrar</button>
     </div>
-    <table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <div className="tbl-wrap"><table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Proveedor</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody>{items.map(p => <tr key={p.id} className={p.stock_bajo ? 'bajo' : ''}>
         <td>{p.sku || '-'}</td><td>{p.nombre} ({p.marca || '-'})</td><td>${p.precio_venta}</td>
         <td>{p.stock} (mín {p.stock_minimo})</td><td>{(p.categorias || []).length ? (p.categorias || []).map(c => c.nombre).join(', ') : <span className="sin-cat">Sin categoría</span>}</td>
+        <td>{p.proveedor_nombre || <span className="sin-cat">Sin proveedor</span>}</td>
         <td>{p.stock === 0 ? <span className="badge out">Sin stock</span> : <span className="badge ok">Disponible</span>}</td>
         <td><button onClick={() => openEdit(p)}>editar</button></td></tr>)}
-      </tbody></table>
+      </tbody></table></div>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo producto" wide>
       <div className="grid">
-        <Field label="SKU" hint="Código único del producto, opcional"><input placeholder="Ej: RC-MINI-3KG" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></Field>
-        <Field label="Nombre*" hint="Nombre visible en listados y ventas"><input placeholder="Ej: Royal Canin Mini 3kg" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} /></Field>
+        <Field label="SKU" hint="Código único del producto, opcional" error={(form.sku || '').length > 60 ? 'Máximo 60 caracteres' : ''}><input placeholder="Ej: RC-MINI-3KG" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></Field>
+        <Field label="Nombre*" hint="Nombre visible en listados y ventas" error={errNombre(form.nombre, 2)}><input placeholder="Ej: Royal Canin Mini 3kg" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className={errNombre(form.nombre, 2) ? 'invalid' : ''} /></Field>
         <Field label="Marca" hint="Marca o laboratorio"><input placeholder="Ej: Royal Canin" value={form.marca} onChange={e => setForm({ ...form, marca: e.target.value })} /></Field>
         <Field label="Unidad" hint="Cómo se vende y descuenta el stock"><select value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
-        <Field label="Costo" hint="Precio de compra, solo referencia interna"><input type="number" placeholder="0" value={form.precio_costo} onChange={e => setForm({ ...form, precio_costo: e.target.value })} /></Field>
-        <Field label="Venta*" hint="Precio al público que se cobra"><input type="number" placeholder="100" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} /></Field>
-        <Field label="Stock" hint="Unidades iniciales disponibles"><input type="number" placeholder="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></Field>
-        <Field label="Mín" hint="Avisa stock bajo al llegar a este nivel"><input type="number" placeholder="10" value={form.stock_minimo} onChange={e => setForm({ ...form, stock_minimo: e.target.value })} /></Field>
-        <Field label="Imagen URL" hint="Link http(s) de foto, opcional"><input placeholder="https://..." value={form.imagen_url} onChange={e => setForm({ ...form, imagen_url: e.target.value })} /></Field>
+        <Field label="Costo" hint="Precio de compra, solo referencia interna" error={errMayorIgual0(form.precio_costo)}><input type="number" placeholder="0" value={form.precio_costo} onChange={e => setForm({ ...form, precio_costo: e.target.value })} className={errMayorIgual0(form.precio_costo) ? 'invalid' : ''} /></Field>
+        <Field label="Venta*" hint="Precio al público que se cobra" error={errMayor0(form.precio_venta, 'Debe ser mayor a 0')}><input type="number" placeholder="100" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} className={errMayor0(form.precio_venta) ? 'invalid' : ''} /></Field>
+        <Field label="Stock" hint="Unidades iniciales disponibles" error={errEnteroMin(form.stock, 0)}><input type="number" placeholder="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className={errEnteroMin(form.stock, 0) ? 'invalid' : ''} /></Field>
+        <Field label="Mín" hint="Avisa stock bajo al llegar a este nivel" error={errEnteroMin(form.stock_minimo, 0)}><input type="number" placeholder="10" value={form.stock_minimo} onChange={e => setForm({ ...form, stock_minimo: e.target.value })} className={errEnteroMin(form.stock_minimo, 0) ? 'invalid' : ''} /></Field>
+        <Field label="Imagen URL" hint="Link http(s) de foto, opcional" error={errUrl(form.imagen_url)}><input placeholder="https://..." value={form.imagen_url} onChange={e => setForm({ ...form, imagen_url: e.target.value })} className={errUrl(form.imagen_url) ? 'invalid' : ''} /></Field>
         <Field label="Descripción" hint="Detalle largo del producto"><input placeholder="Ej: Alimento para perro adulto" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías (opcional, puede quedar Sin categoría): {allCats.map(c => <label key={c.id}><input type="checkbox" checked={form.categoria_ids.includes(c.id)} onChange={e => setForm({ ...form, categoria_ids: e.target.checked ? [...form.categoria_ids, c.id] : form.categoria_ids.filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
+      <Field label="Proveedor principal" hint="Distribuidora habitual, opcional">
+        <select value={form.proveedor_id} onChange={e => { const v = e.target.value; setForm({ ...form, proveedor_id: v, proveedor_ids_alt: v ? Array.from(new Set([...(form.proveedor_ids_alt || []), +v])) : form.proveedor_ids_alt }); }}>
+          <option value="">Sin proveedor</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+      </Field>
+      <p>Otros proveedores (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(form.proveedor_ids_alt || []).includes(p.id)} onChange={e => setForm({ ...form, proveedor_ids_alt: e.target.checked ? [...(form.proveedor_ids_alt || []), p.id] : (form.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={crear}>Guardar</button></div>
     </Modal>
     <Modal open={!!editProd} onClose={() => setEditProd(null)} title={editProd ? `Editar · ${editProd.nombre}` : 'Editar'} wide>
       <div className="grid">
-        <Field label="Codigo"><input placeholder="Ej: RC-MINI-3KG" value={editForm.sku || ''} onChange={e => setEditForm({ ...editForm, sku: e.target.value })} /></Field>
-        <Field label="Nombre"><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} /></Field>
+        <Field label="Codigo" error={(editForm.sku || '').length > 60 ? 'Máximo 60 caracteres' : ''}><input placeholder="Ej: RC-MINI-3KG" value={editForm.sku || ''} onChange={e => setEditForm({ ...editForm, sku: e.target.value })} /></Field>
+        <Field label="Nombre" error={errNombre(editForm.nombre || '', 2)}><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} className={errNombre(editForm.nombre || '', 2) ? 'invalid' : ''} /></Field>
         <Field label="Marca"><input placeholder="Ej: Royal Canin" value={editForm.marca || ''} onChange={e => setEditForm({ ...editForm, marca: e.target.value })} /></Field>
         <Field label="Unidad"><select value={editForm.unidad || 'unidad'} onChange={e => setEditForm({ ...editForm, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
-        <Field label="Costo" hint="Precio al costo"><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} /></Field>
-        <Field label="Venta" hint="Precio al público"><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} /></Field>
-        <Field label="Mín" hint="Avisa stock bajo al llegar a este minimo"><input type="number" placeholder="10" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} /></Field>
-        <Field label="Imagen URL" hint="Foto opcional"><input placeholder="https://..." value={editForm.imagen_url || ''} onChange={e => setEditForm({ ...editForm, imagen_url: e.target.value })} /></Field>
+        <Field label="Costo" hint="Precio al costo" error={errMayorIgual0(editForm.precio_costo ?? 0)}><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} className={errMayorIgual0(editForm.precio_costo ?? 0) ? 'invalid' : ''} /></Field>
+        <Field label="Venta" hint="Precio al público" error={errMayor0(editForm.precio_venta ?? 0, 'Debe ser mayor a 0')}><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} className={errMayor0(editForm.precio_venta ?? 0) ? 'invalid' : ''} /></Field>
+        <Field label="Mín" hint="Avisa stock bajo al llegar a este minimo" error={errEnteroMin(editForm.stock_minimo ?? 10, 0)}><input type="number" placeholder="10" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} className={errEnteroMin(editForm.stock_minimo ?? 10, 0) ? 'invalid' : ''} /></Field>
+        <Field label="Imagen URL" hint="Foto opcional" error={errUrl(editForm.imagen_url || '')}><input placeholder="https://..." value={editForm.imagen_url || ''} onChange={e => setEditForm({ ...editForm, imagen_url: e.target.value })} className={errUrl(editForm.imagen_url || '') ? 'invalid' : ''} /></Field>
         <Field label="Descripción"><input placeholder="Ej: Alimento para perro adulto" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías: {allCats.map(c => <label key={c.id}><input type="checkbox" checked={(editForm.categoria_ids || []).includes(c.id)} onChange={e => setEditForm({ ...editForm, categoria_ids: e.target.checked ? [...(editForm.categoria_ids || []), c.id] : (editForm.categoria_ids || []).filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
+      <Field label="Proveedor principal" hint="Distribuidora habitual, opcional">
+        <select value={editForm.proveedor_id || ''} onChange={e => { const v = e.target.value; setEditForm({ ...editForm, proveedor_id: v, proveedor_ids_alt: v ? Array.from(new Set([...(editForm.proveedor_ids_alt || []), +v])) : editForm.proveedor_ids_alt }); }}>
+          <option value="">Sin proveedor</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+      </Field>
+      <p>Otros proveedores (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(editForm.proveedor_ids_alt || []).includes(p.id)} onChange={e => setEditForm({ ...editForm, proveedor_ids_alt: e.target.checked ? [...(editForm.proveedor_ids_alt || []), p.id] : (editForm.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
       <div className="stock-box">
         <b>Stock actual: {editProd?.stock}</b>
         <div className="row">
-          <input type="number" min="1" step="1" value={stockCant} onChange={e => setStockCant(e.target.value)} placeholder="Cantidad a ingresar" />
+          <input type="number" min="1" step="1" value={stockCant} onChange={e => { setStockCant(e.target.value); setStockErr(''); }} placeholder="Cantidad a ingresar" className={errEnteroMin(stockCant, 1) ? 'invalid' : ''} />
           <button onClick={guardarStock}>Ingresar stock</button>
         </div>
-        {stockErr && <p className="err">{stockErr}</p>}
+        {(stockErr || errEnteroMin(stockCant, 1)) && <small className="field-err">{stockErr || errEnteroMin(stockCant, 1)}</small>}
         <p className="muted small">Suma unidades al stock y lo registra en Historial como ingreso de mercadería.</p>
       </div>
       <div className="modal-actions">
@@ -330,6 +472,7 @@ function Ventas() {
   const setClienteQueryP = v => { ventasState.clienteQuery = v; setClienteQuery(v); };
 
   const [clienteOpen, setClienteOpen] = useState(false);
+  const [tried, setTried] = useState(false);
 
   // Modal nuevo cliente
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
@@ -350,13 +493,17 @@ function Ventas() {
     ventasState.f = fInit; setF(fInit);
     ventasState.lineas = lineasInit; setLineas(lineasInit);
     ventasState.clienteQuery = ''; setClienteQuery('');
+    setTried(false);
     setShowNuevoCliente(false);
     setNuevoClienteErr('');
   };
 
   const submit = async () => {
-    if (!f.cliente_id) { alert('Elegí un cliente'); return; }
-    if (lineas.some(l => !l.producto_id)) { alert('Hay líneas sin producto'); return; }
+    setTried(true);
+    if (!f.cliente_id) return;
+    if (lineas.some(l => !l.producto_id)) return;
+    if (lineas.some(l => errEnteroMin(l.cantidad, 1) || errDtoValor(l.descuento_tipo, l.descuento_valor))) return;
+    if (errDtoValor(f.descuento_tipo, f.descuento_valor)) return;
     try {
       const r = await api.createPedido({ cliente_id: +f.cliente_id, metodo_pago: f.metodo_pago, descuento_tipo: f.descuento_tipo, descuento_valor: +f.descuento_valor, detalles: lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, descuento_tipo: l.descuento_tipo, descuento_valor: +l.descuento_valor })) });
       alert(`Venta #${r.id} registrada · total $${r.total}`); resetPedido(); load();
@@ -376,6 +523,10 @@ function Ventas() {
 
   const guardarNuevoCliente = async () => {
     setNuevoClienteErr('');
+    const eN = errNombre(nuevoClienteForm.nombre, 2);
+    const eE = !nuevoClienteForm.email.trim() ? 'Completá este campo' : !isEmailOk(nuevoClienteForm.email) ? 'Email inválido' : '';
+    const eD = !nuevoClienteForm.dni.trim() ? 'Completá este campo' : nuevoClienteForm.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : '';
+    if (eN || eE || eD) { setNuevoClienteErr(`Corregí lo marcado en rojo: ${eN || eE || eD}`); return; }
     try {
       const nuevo = await api.createCliente(nuevoClienteForm);
       const lista = await api.clientes();
@@ -388,6 +539,9 @@ function Ventas() {
     } catch (e) { setNuevoClienteErr(e.message); }
   };
 
+  const eCliente = (!f.cliente_id && (tried || clienteQuery.trim())) ? 'Elegí un cliente o crealo' : '';
+  const eDtoPedido = errDtoValor(f.descuento_tipo, f.descuento_valor);
+
   return <section>
     <div className="sec-head"><h2>Ventas · Hoy</h2></div>
     <Err e={err} />
@@ -395,7 +549,7 @@ function Ventas() {
       <h3>Registrar venta</h3>
       <div className="row">
         {/* Buscador de clientes con dropdown */}
-        <Field label="Cliente" hint="A quién se le vende">
+        <Field label="Cliente" error={eCliente}>
           <div className="autocomplete-wrap">
             <input
               placeholder="Buscar cliente por nombre..."
@@ -404,6 +558,7 @@ function Ventas() {
               onChange={e => { setClienteQueryP(e.target.value); setFP(prev => ({ ...prev, cliente_id: '' })); setClienteOpen(true); }}
               onFocus={() => { if (clienteQuery.trim()) setClienteOpen(true); }}
               onBlur={() => setTimeout(() => setClienteOpen(false), 150)}
+              className={eCliente ? 'invalid' : ''}
             />
             {clienteOpen && clienteQuery.trim().length > 0 && (
               <ul className="sug-list">
@@ -422,24 +577,27 @@ function Ventas() {
             )}
           </div>
         </Field>
-        <Field label="Método de pago" hint="Cómo paga la venta"><select value={f.metodo_pago} onChange={e => setFP({ ...f, metodo_pago: e.target.value })}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option></select></Field>
-        <Field label="Descuento del pedido" hint="Se aplica al total"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
-        <Field label="Valor del descuento" hint="Si no hay dto, 0"><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} /></Field>
+        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); }}><option>efectivo</option><option>tarjeta</option><option>transferencia</option><option>mercadopago</option><option>debito</option><option>credito</option></select></Field>
+        <Field label="Descuento del pedido" hint="EF/TR pre-carga 10% demo, editable"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
+        <Field label="Valor del descuento" hint="Si no hay dto, 0" error={eDtoPedido}><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} className={eDtoPedido ? 'invalid' : ''} /></Field>
       </div>
-      {lineas.map((l, i) => <div className="line" key={i}>
-        <Field className="lp" label="Producto" hint="Con stock disponible">
+      {lineas.map((l, i) => {
+        const eCant = errEnteroMin(l.cantidad, 1);
+        const eDtoL = errDtoValor(l.descuento_tipo, l.descuento_valor);
+        return <div className="line" key={i}>
+        <Field className="lp" label="Producto" hint="Con stock disponible" error={!l.producto_id ? 'Elegí un producto' : ''}>
           <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLineasP(lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x))} />
         </Field>
-        <Field className="lc" label="Cantidad" hint="Unidades"><input type="number" min="1" value={l.cantidad} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} /></Field>
-        <Field className="ld" label="Descuento" hint="De esta línea"><select value={l.descuento_tipo} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
-        <Field className="lv" label="Valor" hint="Del dto línea"><input type="number" value={l.descuento_valor} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} /></Field>
+        <Field className="lc" label="Cantidad" hint="Unidades" error={eCant}><input type="number" min="1" value={l.cantidad} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x))} className={eCant ? 'invalid' : ''} /></Field>
+        <Field className="ld" label="Descuento" hint="Se aplica al producto"><select value={l.descuento_tipo} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_tipo: e.target.value } : x))}><option value="ningun">sin dto</option><option value="porcentaje">%</option><option value="monto_fijo">$</option></select></Field>
+        <Field className="lv" label="Valor" hint="Del dto línea" error={eDtoL}><input type="number" value={l.descuento_valor} onChange={e => setLineasP(lineas.map((x, j) => j === i ? { ...x, descuento_valor: e.target.value } : x))} className={eDtoL ? 'invalid' : ''} /></Field>
         {/* Solo mostrar el botón quitar si hay más de 1 línea */}
         {lineas.length > 1 && (
-          <button className="ghost" title="Quitar línea" onClick={() => setLineasP(lineas.filter((_, j) => j !== i))}>-</button>
+          <button className="ghost" title="Quitar producto" onClick={() => setLineasP(lineas.filter((_, j) => j !== i))}>-</button>
         )}
-      </div>)}
+      </div>; })}
       <div className="modal-actions">
-        <button className="ghost" onClick={() => setLineasP([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>+ línea</button>
+        <button className="ghost" onClick={() => setLineasP([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>Agregar producto</button>
         <span style={{ flex: 1 }} />
         <button onClick={submit}>Guardar venta</button>
       </div>
@@ -453,10 +611,10 @@ function Ventas() {
     {/* Modal nuevo cliente — abre centrado y ocupa el ancho completo del modal */}
     <Modal open={showNuevoCliente} onClose={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }} title="Nuevo cliente" wide>
       <div className="grid">
-        <Field label="Nombre*" hint="Nombre y apellido"><input placeholder="Martina López" value={nuevoClienteForm.nombre} onChange={e => setNuevoClienteForm(prev => ({ ...prev, nombre: e.target.value }))} /></Field>
-        <Field label="Email*" hint="Email único del cliente"><input type="email" placeholder="martina@mail.com" value={nuevoClienteForm.email} onChange={e => setNuevoClienteForm(prev => ({ ...prev, email: e.target.value }))} /></Field>
+        <Field label="Nombre*" hint="Nombre y apellido" error={errNombre(nuevoClienteForm.nombre, 2)}><input placeholder="Martina López" value={nuevoClienteForm.nombre} onChange={e => setNuevoClienteForm(prev => ({ ...prev, nombre: e.target.value }))} className={errNombre(nuevoClienteForm.nombre, 2) ? 'invalid' : ''} /></Field>
+        <Field label="Email*" hint="Email único del cliente" error={!nuevoClienteForm.email ? '' : !isEmailOk(nuevoClienteForm.email) ? 'Email inválido' : ''}><input type="email" placeholder="martina@mail.com" value={nuevoClienteForm.email} onChange={e => setNuevoClienteForm(prev => ({ ...prev, email: e.target.value }))} className={nuevoClienteForm.email && !isEmailOk(nuevoClienteForm.email) ? 'invalid' : ''} /></Field>
         <Field label="Teléfono" hint="Opcional"><input placeholder="351-2345678" value={nuevoClienteForm.telefono} onChange={e => setNuevoClienteForm(prev => ({ ...prev, telefono: e.target.value }))} /></Field>
-        <Field label="DNI*" hint="DNI único del cliente"><input placeholder="30123456" value={nuevoClienteForm.dni} onChange={e => setNuevoClienteForm(prev => ({ ...prev, dni: e.target.value }))} /></Field>
+        <Field label="DNI*" hint="DNI único del cliente" error={!nuevoClienteForm.dni ? '' : nuevoClienteForm.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : ''}><input placeholder="30123456" value={nuevoClienteForm.dni} onChange={e => setNuevoClienteForm(prev => ({ ...prev, dni: e.target.value }))} className={nuevoClienteForm.dni && nuevoClienteForm.dni.trim().length < 7 ? 'invalid' : ''} /></Field>
         <Field label="Dirección" hint="Opcional"><input placeholder="Av Colón 1234" value={nuevoClienteForm.direccion} onChange={e => setNuevoClienteForm(prev => ({ ...prev, direccion: e.target.value }))} /></Field>
       </div>
       {nuevoClienteErr && <p className="err">{nuevoClienteErr}</p>}
@@ -542,15 +700,15 @@ function Clientes() {
     </div>
     <Modal open={open} onClose={() => setOpen(false)} title="Nuevo cliente">
       <div className="grid">
-        <Field label="Nombre" hint="Nombre y apellido del cliente"><input placeholder="Ej: Martina López" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
-        <Field label="Email" hint="Email único, identifica al cliente"><input placeholder="Ej: martina@mail.com" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} /></Field>
+        <Field label="Nombre" hint="Nombre y apellido del cliente" error={errNombre(f.nombre, 2)}><input placeholder="Ej: Martina López" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} className={errNombre(f.nombre, 2) ? 'invalid' : ''} /></Field>
+        <Field label="Email" hint="Email único, identifica al cliente" error={!f.email ? '' : !isEmailOk(f.email) ? 'Email inválido' : ''}><input placeholder="Ej: martina@mail.com" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} className={f.email && !isEmailOk(f.email) ? 'invalid' : ''} /></Field>
         <Field label="Teléfono" hint="Teléfono de contacto, opcional"><input placeholder="Ej: 351-2345678" value={f.telefono} onChange={e => setF({ ...f, telefono: e.target.value })} /></Field>
-        <Field label="DNI" hint="DNI único del cliente"><input placeholder="Ej: 30123456" value={f.dni} onChange={e => setF({ ...f, dni: e.target.value })} /></Field>
+        <Field label="DNI" hint="DNI único del cliente" error={!f.dni ? '' : f.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : ''}><input placeholder="Ej: 30123456" value={f.dni} onChange={e => setF({ ...f, dni: e.target.value })} className={f.dni && f.dni.trim().length < 7 ? 'invalid' : ''} /></Field>
         <Field label="Dirección" hint="Dirección, opcional"><input placeholder="Ej: Av Colón 1234" value={f.direccion} onChange={e => setF({ ...f, direccion: e.target.value })} /></Field>
       </div>
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { try { await api.createCliente(f); setF({ nombre: '', email: '', telefono: '', dni: '', direccion: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { const hayErr = errNombre(f.nombre, 2) || (!f.email.trim() ? 'Completá el email' : !isEmailOk(f.email) ? 'Email inválido' : '') || (!f.dni.trim() ? 'Completá el DNI' : f.dni.trim().length < 7 ? 'DNI mínimo 7' : ''); if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; } try { await api.createCliente(f); setF({ nombre: '', email: '', telefono: '', dni: '', direccion: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
-    <table><thead><tr><th>Nombre</th><th>Email</th><th>DNI</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
+    <div className="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>DNI</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
       {rows.map(c => <tbody key={c.id}>
         <tr>
           <td>{c.nombre}</td><td>{c.email}</td><td>{c.dni}</td>
@@ -559,7 +717,7 @@ function Clientes() {
         </tr>
         {selId === c.id && <tr><td colSpan={6}>{pedsBlock}</td></tr>}
       </tbody>)}
-    </table>
+    </table></div>
     {rows.length === 0 && <p className="muted">Sin clientes para este filtro.</p>}
   </section>;
 }
@@ -577,6 +735,81 @@ function HistPager({ total, page, setPage, size = 6 }) {
       <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>›</button>
     </div>
   );
+}
+
+/* ---------- Caja diaria (paso 3) ---------- */
+function Caja() {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [dia, setDia] = useState(hoy);
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState('');
+  const [f, setF] = useState({ tipo: 'SALIDA', medio: 'efectivo', descripcion: '', monto: '' });
+
+  const load = async (d) => {
+    setErr('');
+    try { setRes(await api.caja(d)); }
+    catch (e) { setErr(e.message); }
+  };
+  useEffect(() => { load(dia); }, []);
+  const mover = (d) => {
+    const dt = new Date(dia + 'T12:00:00'); dt.setDate(dt.getDate() + d);
+    const s = dt.toISOString().slice(0, 10); setDia(s); load(s);
+  };
+  const guardar = async () => {
+    if (!f.descripcion.trim() || !(+f.monto > 0)) { setErr('Descripción y monto mayor a 0'); return; }
+    try {
+      await api.createCajaMov({ tipo: f.tipo, medio: f.medio, descripcion: f.descripcion.trim(), monto: +f.monto });
+      setF({ tipo: 'SALIDA', medio: 'efectivo', descripcion: '', monto: '' }); load(dia);
+    } catch (e) { setErr(e.message); }
+  };
+  const borrar = async (m) => {
+    if (!confirm(`Borrar "${m.descripcion}"?`)) return;
+    try { await api.deleteCajaMov(m.id); load(dia); } catch (e) { setErr(e.message); }
+  };
+  const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  const movs = res?.movimientos || [];
+  const entradas = movs.filter(m => m.tipo === 'ENTRADA');
+  const salidas = movs.filter(m => m.tipo === 'SALIDA');
+  return <section>
+    <div className="sec-head"><h2>{dia === hoy ? 'Caja · Hoy' : `Caja · ${dia}`}</h2>{dia === hoy
+      ? <button className="fab" disabled>Hoy</button>
+      : <button className="fab" onClick={() => { setDia(hoy); load(hoy); }}>‹ Volver a hoy</button>}</div>
+    <Err e={err} />
+    <div className="row day-picker">
+      <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
+      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value); }} />
+      <button className="ghost" onClick={() => mover(1)} disabled={dia >= hoy}>Mañana ›</button>
+    </div>
+    <div className="cards">
+      <div className="card"><span>Entrada</span><b>{fmt(res?.total_entrada || 0)}</b><small>{entradas.length} movimientos</small></div>
+      <div className="card"><span>Salida</span><b>{fmt(res?.total_salida || 0)}</b><small>{salidas.length} movimientos</small></div>
+      <div className="card"><span>Balance</span><b>{fmt(res?.balance || 0)}</b><small>entrada − salida</small></div>
+    </div>
+    <div className="sale-box">
+      <h3>Movimiento manual (gastos, entradas extra)</h3>
+      <p className="muted small">Las ventas y los pagos a proveedores se registran solos.</p>
+      <div className="row">
+        <Field label="Tipo"><select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="SALIDA">salida</option><option value="ENTRADA">entrada</option></select></Field>
+        <Field label="Medio"><select value={f.medio} onChange={e => setF({ ...f, medio: e.target.value })}><option value="efectivo">EF · efectivo</option><option value="transferencia">TR · transferencia</option><option value="mercadopago">MP · mercadopago</option><option value="debito">DB · débito</option><option value="credito">CD · crédito</option></select></Field>
+        <Field label="Descripción"><input placeholder="Ej: Cabify" value={f.descripcion} onChange={e => setF({ ...f, descripcion: e.target.value })} /></Field>
+        <Field label="Monto"><input type="number" placeholder="0" value={f.monto} onChange={e => setF({ ...f, monto: e.target.value })} /></Field>
+        <button onClick={guardar}>Agregar</button>
+      </div>
+    </div>
+    <div className="cols">
+      <div>
+        <h3>Entradas</h3>
+        {entradas.length === 0 ? <p className="muted">Sin entradas.</p> :
+          <ul>{entradas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {m.medio}</small></li>)}</ul>}
+      </div>
+      <div>
+        <h3>Salidas</h3>
+        {salidas.length === 0 ? <p className="muted">Sin salidas.</p> :
+          <ul>{salidas.map(m => <li key={m.id}>{m.descripcion} · {fmt(m.monto)} <small>· {m.medio}</small>
+            {!m.automatico && <button onClick={() => borrar(m)}>borrar</button>}</li>)}</ul>}
+      </div>
+    </div>
+  </section>;
 }
 
 /* ---------- Historial por día ---------- */

@@ -54,6 +54,7 @@ export const api = {
     if (p.search) q.set('search', p.search);
     if (p.stock_bajo) q.set('stock_bajo', 'true');
     if (p.solo_activos) q.set('solo_activos', 'true');
+    if (p.proveedor) q.set('proveedor', p.proveedor);
     const s = q.toString();
     return req(`/productos${s ? `?${s}` : ''}`);
   },
@@ -77,4 +78,10 @@ export const api = {
   reporte: (fecha) => req(`/reportes/ventas${fecha ? `?fecha=${fecha}` : ''}`),
   proveedores: () => req('/proveedores'),
   createProv: (d) => req('/proveedores', { method: 'POST', body: JSON.stringify(d) }),
+  saldosProv: () => req('/proveedores/saldos'),
+  provMovs: (id) => req(`/proveedores/${id}/movimientos`),
+  createProvMov: (id, d) => req(`/proveedores/${id}/movimientos`, { method: 'POST', body: JSON.stringify(d) }),
+  caja: (fecha) => req(`/caja${fecha ? `?fecha=${fecha}` : ''}`),
+  createCajaMov: (d) => req('/caja', { method: 'POST', body: JSON.stringify(d) }),
+  deleteCajaMov: (id) => req(`/caja/${id}`, { method: 'DELETE' }),
 };

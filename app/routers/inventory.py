@@ -60,6 +60,74 @@ def crear_prov(d: schemas.ProveedorCreate, db: Session = Depends(get_db)):
 def listar_prov(db: Session = Depends(get_db)):
     return db.query(models.Proveedor).all()
 
+
+SIGNO_DEUDA = {
+    models.TipoMovProveedor.BOLETA_001: 1,
+    models.TipoMovProveedor.PAGO_EFECTIVO_002: -1,
+    models.TipoMovProveedor.PAGO_TRANSFER_003: -1,
+    models.TipoMovProveedor.NOTA_CREDITO_004: -1,
+}
+
+
+def _con_saldo(movs: list[models.MovimientoProveedor]) -> list[schemas.MovimientoProveedorOut]:
+    """Suma corrida por proveedor (orden cronológico): boleta 001 suma, resto resta."""
+    out, acc = [], 0.0
+    for m in sorted(movs, key=lambda x: (x.fecha, x.id)):
+        acc = round(acc + SIGNO_DEUDA[m.tipo] * m.monto, 2)
+        o = schemas.MovimientoProveedorOut.model_validate(m)
+        o.pago = 0 if m.tipo == models.TipoMovProveedor.BOLETA_001 else m.monto
+        o.saldo_boleta = m.monto if m.tipo == models.TipoMovProveedor.BOLETA_001 else 0
+        o.saldo = acc
+        out.append(o)
+    return out
+
+
+@prov.get("/saldos", dependencies=[leer])
+def saldos_prov(db: Session = Depends(get_db)):
+    """Deuda actual por proveedor (para las pestañas tipo AMICO/Canalú)."""
+    res = []
+    for pr in db.query(models.Proveedor).all():
+        movs = db.query(models.MovimientoProveedor).filter(
+            models.MovimientoProveedor.proveedor_id == pr.id).all()
+        saldo = round(sum(SIGNO_DEUDA[m.tipo] * m.monto for m in movs), 2)
+        res.append({"id": pr.id, "nombre": pr.nombre, "alias": pr.alias,
+                    "dias_entrega": pr.dias_entrega, "saldo": saldo,
+                    "movimientos": len(movs)})
+    return res
+
+
+@prov.get("/{pid}/movimientos", response_model=list[schemas.MovimientoProveedorOut], dependencies=[leer])
+def movs_prov(pid: int, db: Session = Depends(get_db)):
+    if not db.get(models.Proveedor, pid):
+        raise HTTPException(404, "Proveedor no encontrado")
+    movs = db.query(models.MovimientoProveedor).filter(
+        models.MovimientoProveedor.proveedor_id == pid).all()
+    return _con_saldo(movs)
+
+
+@prov.post("/{pid}/movimientos", response_model=schemas.MovimientoProveedorOut, status_code=201, dependencies=[leer])
+def crear_mov_prov(pid: int, d: schemas.MovimientoProveedorCreate, db: Session = Depends(get_db)):
+    pr = db.get(models.Proveedor, pid)
+    if not pr:
+        raise HTTPException(404, "Proveedor no encontrado")
+    m = models.MovimientoProveedor(
+        proveedor_id=pid, tipo=d.tipo, nro=d.nro.strip(),
+        monto=d.monto, fecha=d.fecha or datetime.utcnow())
+    db.add(m); db.flush()
+    if d.tipo in (models.TipoMovProveedor.PAGO_EFECTIVO_002,
+                  models.TipoMovProveedor.PAGO_TRANSFER_003):
+        medio = (models.MetodoPago.efectivo
+                 if d.tipo == models.TipoMovProveedor.PAGO_EFECTIVO_002
+                 else models.MetodoPago.transferencia)
+        db.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.SALIDA, medio=medio,
+            descripcion=f"Pago {pr.nombre} {m.nro}",
+            monto=d.monto, fecha=m.fecha))
+    db.commit(); db.refresh(m)
+    previos = db.query(models.MovimientoProveedor).filter(
+        models.MovimientoProveedor.proveedor_id == pid).all()
+    return _con_saldo(previos)[-1]
+
 rep = APIRouter(prefix="/reportes", tags=["reportes"])
 
 @rep.get("/ventas", dependencies=[leer])

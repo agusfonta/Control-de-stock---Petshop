@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
-from app.models import MetodoPago, TipoDescuento, Unidad
+from app.models import MetodoPago, TipoDescuento, TipoMovCaja, TipoMovProveedor, Unidad
 
 
 def _url_ok_value(v):
@@ -42,6 +42,10 @@ class ProductoCreate(BaseModel):
     # Un producto puede quedar "Sin categoría" (ej: se borró su categoría).
     # Desde el panel se le puede asignar otra después.
     categoria_ids: List[int] = Field(default_factory=list)
+    # Proveedor principal (opcional, como la columna Distribuidora del Excel).
+    # La dueña decide al crear: uno solo o varios (ver proveedor_ids_alt).
+    proveedor_id: Optional[int] = None
+    proveedor_ids_alt: List[int] = Field(default_factory=list)
 
     @field_validator("imagen_url")
     @classmethod
@@ -62,6 +66,8 @@ class ProductoUpdate(BaseModel):
     imagen_url: Optional[str] = None
     activo: Optional[bool] = None
     categoria_ids: Optional[List[int]] = None
+    proveedor_id: Optional[int] = None
+    proveedor_ids_alt: Optional[List[int]] = None
 
     @field_validator("imagen_url")
     @classmethod
@@ -85,6 +91,9 @@ class ProductoOut(BaseModel):
     activo: bool
     categorias: List[CategoriaOut] = []
     stock_bajo: bool = False
+    proveedor_id: Optional[int] = None
+    proveedor_nombre: Optional[str] = None
+    proveedor_ids_alt: List[int] = []
 
 
 # ---------- Clientes ----------
@@ -181,11 +190,54 @@ class ProveedorCreate(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     contacto: Optional[str] = Field(default=None, max_length=120)
     telefono: Optional[str] = Field(default=None, max_length=40)
+    alias: Optional[str] = Field(default=None, max_length=120)
+    dias_entrega: Optional[str] = Field(default=None, max_length=120)
 
 
 class ProveedorOut(ProveedorCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+class MovimientoProveedorCreate(BaseModel):
+    tipo: TipoMovProveedor
+    nro: str = Field(min_length=1, max_length=60)
+    monto: float = Field(gt=0, le=1000000000)
+    fecha: Optional[datetime] = None
+
+
+class MovimientoProveedorOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    proveedor_id: int
+    fecha: datetime
+    tipo: TipoMovProveedor
+    nro: str
+    monto: float
+    # Columnas espejo de su Excel, calculadas en backend:
+    pago: float = 0          # monto si es 002/003/004, else 0
+    saldo_boleta: float = 0  # monto si es 001, else 0
+    saldo: float = 0         # suma corrida (deuda restante, negativa como en su planilla)
+
+
+class MovimientoCajaCreate(BaseModel):
+    tipo: TipoMovCaja
+    medio: MetodoPago
+    descripcion: str = Field(min_length=2, max_length=250)
+    monto: float = Field(gt=0, le=1000000000)
+    fecha: Optional[datetime] = None
+
+
+class MovimientoCajaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    fecha: datetime
+    tipo: TipoMovCaja
+    medio: MetodoPago
+    descripcion: str
+    monto: float
+    pedido_id: Optional[int] = None
+    automatico: bool = False  # True si lo generó una venta/pago (no se puede borrar)
 
 
 class UserCreate(BaseModel):

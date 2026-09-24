@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getSession, setSession } from './api';
 
-const TABS = ['Productos', 'Ventas', 'Caja', 'Historial', 'Clientes', 'Categorías', 'Proveedores'];
+const TABS = ['Hoy', 'Ventas', 'Caja', 'Productos', 'Clientes', 'Distribuidoras'];
 
 // Estado de Ventas fuera del componente para persistir entre cambios de pestaña
 const ventasState = {
@@ -15,7 +15,7 @@ export default function App() {
   const [session, setSess] = useState(getSession);
   const [passOpen, setPassOpen] = useState(false);
   const [pc, setPc] = useState({ current: '', next: '' });
-  const icons = { 'Productos': '🛒', 'Categorías': '🏷️', 'Ventas': '🧾', 'Caja': '💰', 'Clientes': '🐾', 'Historial': '📅', 'Usuarios': '👤', 'Proveedores': '🚚' };
+  const icons = { 'Hoy': '📊', 'Productos': '🛒', 'Ventas': '🧾', 'Caja': '💰', 'Clientes': '🐾', 'Usuarios': '👤', 'Distribuidoras': '🚚' };
   useEffect(() => {
     const off = () => setSess(null);
     window.addEventListener('auth-expired', off);
@@ -40,14 +40,13 @@ export default function App() {
       </Modal>
       <nav>{tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{icons[t]} {t}</button>)}</nav>
       <main>
-        {tab === 'Productos' && <Productos isAdmin={session.rol === 'admin'} />}
-        {tab === 'Categorías' && <Categorias isAdmin={session.rol === 'admin'} />}
+        {tab === 'Hoy' && <Hoy go={setTab} />}
         {tab === 'Ventas' && <Ventas />}
         {tab === 'Caja' && <Caja />}
+        {tab === 'Productos' && <Productos isAdmin={session.rol === 'admin'} />}
         {tab === 'Clientes' && <Clientes />}
-        {tab === 'Historial' && <Stock />}
+        {tab === 'Distribuidoras' && <Proveedores />}
         {tab === 'Usuarios' && <Usuarios />}
-        {tab === 'Proveedores' && <Proveedores />}
       </main>
     </div>
   );
@@ -107,7 +106,7 @@ function Usuarios() {
   </section>;
 }
 
-/* ---------- Proveedores / Cuenta corriente (paso 2) ---------- */
+/* ---------- Distribuidoras / Cuenta corriente (paso 2) ---------- */
 const TIPO_COD = { BOLETA_001: '001', PAGO_EFECTIVO_002: '002', PAGO_TRANSFER_003: '003', NOTA_CREDITO_004: '004' };
 const TIPO_TXT = { BOLETA_001: 'Pedido', PAGO_EFECTIVO_002: 'Pago en Efectivo', PAGO_TRANSFER_003: 'Pago Transferencia', NOTA_CREDITO_004: 'Nota de Crédito' };
 
@@ -135,7 +134,7 @@ function Proveedores() {
   };
   const fmt = (n) => '$' + (+n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
   return <section>
-    <div className="sec-head"><h2>Proveedores</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <div className="sec-head"><h2>Distribuidoras</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
     {loading ? 'Cargando...' : <ul>{(data || []).map(p =>
       <li key={p.id} className="cat-li">
@@ -161,7 +160,7 @@ function Proveedores() {
         </tbody></table></div>
       {movs.length === 0 && <p className="muted">Sin movimientos.</p>}
     </div>}
-    <Modal open={open} onClose={() => setOpen(false)} title="Nuevo proveedor">
+    <Modal open={open} onClose={() => setOpen(false)} title="Nueva distribuidora">
       <Field label="Nombre*"><input placeholder="Distri Demo" value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} /></Field>
       <Field label="Alias" hint="Alias MP para pagarle"><input placeholder="demo.mp" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></Field>
       <Field label="Entregas" hint="Ej: todos los días"><input placeholder="lun/mie/vie" value={f.dias_entrega} onChange={e => setF({ ...f, dias_entrega: e.target.value })} /></Field>
@@ -271,6 +270,7 @@ function Productos({ isAdmin }) {
   const [allProvs, setAllProvs] = useState([]);
   const [search, setSearch] = useState(''); const [cat, setCat] = useState(''); const [prov, setProv] = useState(''); const [bajo, setBajo] = useState(false);
   const [items, setItems] = useState([]); const [err, setErr] = useState('');
+  const [showCats, setShowCats] = useState(false);
   const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', marca: '', unidad: 'unidad', precio_costo: 0, precio_venta: 100, stock: 0, stock_minimo: 10, imagen_url: '', categoria_ids: [], proveedor_id: '', proveedor_ids_alt: [] });
   const [open, setOpen] = useState(false);
   const [editProd, setEditProd] = useState(null);
@@ -331,19 +331,21 @@ function Productos({ isAdmin }) {
   };
   return <section>
     <div className="sec-head"><h2>Productos</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <div className="row"><button className="ghost" onClick={() => setShowCats(!showCats)}>🏷️ {showCats ? 'Ocultar categorías' : 'Ver categorías'}</button></div>
+    {showCats && <Categorias isAdmin={isAdmin} />}
     <Err e={err} />
     <div className="row">
       <input placeholder="Buscar nombre/marca" value={search} onChange={e => setSearch(e.target.value)} />
       <select value={cat} onChange={e => setCat(e.target.value)}><option value="">Todas las categorías</option>{allCats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select>
-      <select value={prov} onChange={e => setProv(e.target.value)}><option value="">Todos los proveedores</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
+      <select value={prov} onChange={e => setProv(e.target.value)}><option value="">Todas las distribuidoras</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
       <label><input type="checkbox" checked={bajo} onChange={e => setBajo(e.target.checked)} /> stock bajo</label>
       <button onClick={load}>Filtrar</button>
     </div>
-    <div className="tbl-wrap"><table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Proveedor</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <div className="tbl-wrap"><table><thead><tr><th>SKU</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Cats</th><th>Distribuidora</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody>{items.map(p => <tr key={p.id} className={p.stock_bajo ? 'bajo' : ''}>
         <td>{p.sku || '-'}</td><td>{p.nombre} ({p.marca || '-'})</td><td>${p.precio_venta}</td>
         <td>{p.stock} (mín {p.stock_minimo})</td><td>{(p.categorias || []).length ? (p.categorias || []).map(c => c.nombre).join(', ') : <span className="sin-cat">Sin categoría</span>}</td>
-        <td>{p.proveedor_nombre || <span className="sin-cat">Sin proveedor</span>}</td>
+        <td>{p.proveedor_nombre || <span className="sin-cat">Sin distribuidora</span>}</td>
         <td>{p.stock === 0 ? <span className="badge out">Sin stock</span> : <span className="badge ok">Disponible</span>}</td>
         <td><button onClick={() => openEdit(p)}>editar</button></td></tr>)}
       </tbody></table></div>
@@ -361,12 +363,12 @@ function Productos({ isAdmin }) {
         <Field label="Descripción" hint="Detalle largo del producto"><input placeholder="Ej: Alimento para perro adulto" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías (opcional, puede quedar Sin categoría): {allCats.map(c => <label key={c.id}><input type="checkbox" checked={form.categoria_ids.includes(c.id)} onChange={e => setForm({ ...form, categoria_ids: e.target.checked ? [...form.categoria_ids, c.id] : form.categoria_ids.filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
-      <Field label="Proveedor principal" hint="Distribuidora habitual, opcional">
+      <Field label="Distribuidora principal" hint="Distribuidora habitual, opcional">
         <select value={form.proveedor_id} onChange={e => { const v = e.target.value; setForm({ ...form, proveedor_id: v, proveedor_ids_alt: v ? Array.from(new Set([...(form.proveedor_ids_alt || []), +v])) : form.proveedor_ids_alt }); }}>
-          <option value="">Sin proveedor</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          <option value="">Sin distribuidora</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
       </Field>
-      <p>Otros proveedores (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(form.proveedor_ids_alt || []).includes(p.id)} onChange={e => setForm({ ...form, proveedor_ids_alt: e.target.checked ? [...(form.proveedor_ids_alt || []), p.id] : (form.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
+      <p>Otras distribuidoras (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(form.proveedor_ids_alt || []).includes(p.id)} onChange={e => setForm({ ...form, proveedor_ids_alt: e.target.checked ? [...(form.proveedor_ids_alt || []), p.id] : (form.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
       <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={crear}>Guardar</button></div>
     </Modal>
     <Modal open={!!editProd} onClose={() => setEditProd(null)} title={editProd ? `Editar · ${editProd.nombre}` : 'Editar'} wide>
@@ -382,12 +384,12 @@ function Productos({ isAdmin }) {
         <Field label="Descripción"><input placeholder="Ej: Alimento para perro adulto" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></Field>
       </div>
       <p>Categorías: {allCats.map(c => <label key={c.id}><input type="checkbox" checked={(editForm.categoria_ids || []).includes(c.id)} onChange={e => setEditForm({ ...editForm, categoria_ids: e.target.checked ? [...(editForm.categoria_ids || []), c.id] : (editForm.categoria_ids || []).filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
-      <Field label="Proveedor principal" hint="Distribuidora habitual, opcional">
+      <Field label="Distribuidora principal" hint="Distribuidora habitual, opcional">
         <select value={editForm.proveedor_id || ''} onChange={e => { const v = e.target.value; setEditForm({ ...editForm, proveedor_id: v, proveedor_ids_alt: v ? Array.from(new Set([...(editForm.proveedor_ids_alt || []), +v])) : editForm.proveedor_ids_alt }); }}>
-          <option value="">Sin proveedor</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          <option value="">Sin distribuidora</option>{allProvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
       </Field>
-      <p>Otros proveedores (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(editForm.proveedor_ids_alt || []).includes(p.id)} onChange={e => setEditForm({ ...editForm, proveedor_ids_alt: e.target.checked ? [...(editForm.proveedor_ids_alt || []), p.id] : (editForm.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
+      <p>Otras distribuidoras (opcional): {allProvs.map(p => <label key={p.id}><input type="checkbox" checked={(editForm.proveedor_ids_alt || []).includes(p.id)} onChange={e => setEditForm({ ...editForm, proveedor_ids_alt: e.target.checked ? [...(editForm.proveedor_ids_alt || []), p.id] : (editForm.proveedor_ids_alt || []).filter(x => x !== p.id) })} />{p.nombre}</label>)}</p>
       <div className="stock-box">
         <b>Stock actual: {editProd?.stock}</b>
         <div className="row">
@@ -395,7 +397,7 @@ function Productos({ isAdmin }) {
           <button onClick={guardarStock}>Ingresar stock</button>
         </div>
         {(stockErr || errEnteroMin(stockCant, 1)) && <small className="field-err">{stockErr || errEnteroMin(stockCant, 1)}</small>}
-        <p className="muted small">Suma unidades al stock y lo registra en Historial como ingreso de mercadería.</p>
+        <p className="muted small">Suma unidades al stock y lo registra como ingreso de mercadería.</p>
       </div>
       <div className="modal-actions">
         {isAdmin && <button className="danger" onClick={eliminarProd}>Eliminar</button>}
@@ -722,21 +724,6 @@ function Clientes() {
   </section>;
 }
 
-/* ---------- HistPager (Tasks 4+5) ---------- */
-function HistPager({ total, page, setPage, size = 6 }) {
-  if (total <= size) return null;
-  const pages = Math.ceil(total / size);
-  return (
-    <div className="hist-pager">
-      <button className="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
-      {Array.from({ length: pages }, (_, i) => (
-        <span key={i} className={'dot' + (i === page ? ' active' : '')} onClick={() => setPage(i)} />
-      ))}
-      <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>›</button>
-    </div>
-  );
-}
-
 /* ---------- Caja diaria (paso 3) ---------- */
 function Caja() {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -787,7 +774,7 @@ function Caja() {
     </div>
     <div className="sale-box">
       <h3>Movimiento manual (gastos, entradas extra)</h3>
-      <p className="muted small">Las ventas y los pagos a proveedores se registran solos.</p>
+      <p className="muted small">Las ventas y los pagos a distribuidoras se registran solos.</p>
       <div className="row">
         <Field label="Tipo"><select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}><option value="SALIDA">salida</option><option value="ENTRADA">entrada</option></select></Field>
         <Field label="Medio"><select value={f.medio} onChange={e => setF({ ...f, medio: e.target.value })}><option value="efectivo">EF · efectivo</option><option value="transferencia">TR · transferencia</option><option value="mercadopago">MP · mercadopago</option><option value="debito">DB · débito</option><option value="credito">CD · crédito</option></select></Field>
@@ -812,80 +799,54 @@ function Caja() {
   </section>;
 }
 
-/* ---------- Historial por día ---------- */
-function Stock() {
+/* ---------- Hoy (resumen del día) ---------- */
+function Hoy({ go }) {
   const hoy = new Date().toISOString().slice(0, 10);
-  const [dia, setDia] = useState(hoy);
-  const [pedidos, setPedidos] = useState([]); const [movs, setMovs] = useState([]);
-  const [rep, setRep] = useState(null); const [names, setNames] = useState({});
+  const [pedidos, setPedidos] = useState([]);
+  const [rep, setRep] = useState(null);
+  const [bajo, setBajo] = useState([]);
+  const [balance, setBalance] = useState(null);
   const [err, setErr] = useState(''); const [loading, setLoading] = useState(false);
-  // Tasks 4+5: paginación independiente para cada sección
-  const [pagPedidos, setPagPedidos] = useState(0);
-  const [pagMovs, setPagMovs] = useState(0);
-  const PAGE = 6;
 
-  const load = async (f) => {
+  const load = async () => {
     setLoading(true); setErr('');
-    setPagPedidos(0); setPagMovs(0);
     try {
-      const [p, m, r, prods] = await Promise.all([
-        api.pedidos(f), api.movs(null, f), api.reporte(f), api.prods().catch(() => []),
+      const [p, r, sb, cj] = await Promise.all([
+        api.pedidos(hoy), api.reporte(hoy),
+        api.prods({ stock_bajo: true }).catch(() => []),
+        api.caja(hoy).catch(() => null),
       ]);
-      setPedidos(p); setMovs(m); setRep(r);
-      const map = {}; prods.forEach(x => { map[x.id] = x.nombre; }); setNames(map);
+      setPedidos(p); setRep(r); setBajo(sb || []); setBalance(cj?.balance ?? null);
     } catch (e) { setErr(e.message); } finally { setLoading(false); }
   };
-  useEffect(() => { load(dia); }, []);
-  const mover = (d) => {
-    const dt = new Date(dia + 'T12:00:00'); dt.setDate(dt.getDate() + d);
-    const s = dt.toISOString().slice(0, 10); setDia(s); load(s);
-  };
-  const ingresos = movs.filter(m => m.tipo === 'INGRESO');
-  const egresos = movs.filter(m => m.tipo === 'EGRESO_VENTA');
-  const devol = movs.filter(m => m.tipo === 'DEVOLUCION_CANCEL');
-  const fmt = (f) => (f || '').slice(11, 16);
-
-  // Task 4: vista paginada de pedidos (máx 6)
-  const pedidosView = pedidos.slice(pagPedidos * PAGE, pagPedidos * PAGE + PAGE);
-  // Task 5: vista paginada de movimientos (máx 6)
-  const movsView = movs.slice(pagMovs * PAGE, pagMovs * PAGE + PAGE);
+  useEffect(() => { load(); }, []);
+  const fmt$ = (n) => '$' + (+(n || 0)).toLocaleString('es-AR');
 
   return <section>
-    <div className="sec-head"><h2>{dia === hoy ? 'Historial · Hoy' : `Historial · ${dia}`}</h2>{dia === hoy
-      ? <button className="fab" disabled>Hoy</button>
-      : <button className="fab" onClick={() => { setDia(hoy); load(hoy); }}>‹ Volver a hoy</button>}</div>
+    <div className="sec-head"><h2>Hoy</h2></div>
     <Err e={err} />
-    <div className="row day-picker">
-      <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
-      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value); }} />
-      <button className="ghost" onClick={() => mover(1)} disabled={dia >= hoy}>Mañana ›</button>
-      {loading && <span> Cargando...</span>}
-    </div>
+    {loading && <p className="muted">Cargando...</p>}
     <div className="cards">
-      <div className="card"><span>Ventas</span><b>${rep ? rep.total_ars : 0}</b><small>{rep ? rep.cantidad_pedidos : 0} pedidos pagados</small></div>
-      <div className="card"><span>Unidades vendidas</span><b>{egresos.reduce((a, m) => a + m.cantidad, 0)}</b><small>{egresos.length} egresos</small></div>
-      <div className="card"><span>Ingresos mercadería</span><b>+{ingresos.reduce((a, m) => a + m.cantidad, 0)}</b><small>{ingresos.length} ingresos</small></div>
-      <div className="card"><span>Devoluciones</span><b>+{devol.reduce((a, m) => a + m.cantidad, 0)}</b><small>por cancelación</small></div>
+      <div className="card"><span>Ventas</span><b>{fmt$(rep?.total_ars)}</b><small>{rep ? rep.cantidad_pedidos : 0} pedidos pagados</small></div>
+      <div className="card"><span>Balance caja</span><b>{balance === null ? '—' : fmt$(balance)}</b><small>entrada − salida</small></div>
+      <div className="card"><span>Stock bajo</span><b>{bajo.length}</b><small>productos para reponer</small></div>
     </div>
     <div className="cols">
       <div>
-        <h3>{dia === hoy ? 'Ventas de hoy' : `Ventas del ${dia}`}</h3>
-        {pedidos.length === 0 ? <p className="muted">Sin movimientos este día.</p> : <>
-          <ul>{pedidosView.map(p => <li key={p.id}>#{p.id} · {p.estado} · ${p.total} · {p.metodo_pago}<br />
-            <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small></li>)}</ul>
-          <HistPager total={pedidos.length} page={pagPedidos} setPage={setPagPedidos} />
-        </>}
+        <h3>Últimas ventas</h3>
+        {pedidos.length === 0 ? <p className="muted">Todavía no hay ventas hoy.</p> :
+          <ul>{pedidos.slice(0, 5).map(p => <li key={p.id}>#{p.id} · {p.estado} · ${p.total} · {p.metodo_pago}<br />
+            <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small></li>)}</ul>}
+        <button className="ghost" onClick={() => go('Ventas')}>Ver todas en Ventas ›</button>
       </div>
       <div>
-        <h3>Ingresos y egresos</h3>
-        {movs.length === 0 ? <p className="muted">Sin movimientos este día.</p> : <>
-          <ul>{movsView.map(m => <li key={m.id}>
-            <b className={m.tipo === 'INGRESO' ? 'in' : m.tipo === 'EGRESO_VENTA' ? 'out' : 'dev'}>
-              {m.tipo === 'INGRESO' ? '+ingreso' : m.tipo === 'EGRESO_VENTA' ? '-venta' : '+devolución'}</b>
-            {' '}{names[m.producto_id] || `prod ${m.producto_id}`} x{m.cantidad} <small>{fmt(m.fecha)} · {m.stock_anterior}→{m.stock_nuevo}{m.pedido_id ? ` · ped #${m.pedido_id}` : ''}</small>
-          </li>)}</ul>
-          <HistPager total={movs.length} page={pagMovs} setPage={setPagMovs} />
-        </>}
+        <h3>Reponer stock</h3>
+        {bajo.length === 0 ? <p className="muted">Sin alertas de stock.</p> :
+          <ul>{bajo.slice(0, 5).map(p => <li key={p.id}>{p.nombre} · stock {p.stock} (mín {p.stock_minimo})</li>)}</ul>}
+        <div className="row">
+          <button className="ghost" onClick={() => go('Productos')}>Ver en Productos ›</button>
+          <button className="ghost" onClick={() => go('Caja')}>Ver Caja ›</button>
+        </div>
       </div>
     </div>
   </section>;

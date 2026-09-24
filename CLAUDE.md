@@ -72,3 +72,4 @@ En `.agents/skills/` (flujo OpenSpec):
 2. Backend: router + schema + servicio; Frontend: `api.js` + componente en `App.jsx`.
 3. Verificar con ejecución (`uvicorn` / `vite dev` / `pytest`) antes de afirmar.
 4. Referenciar `archivo:línea` en respuestas. No crear archivos nuevos si basta editar. No commitear/buildear sin pedido.
+5. `npm run lint` con `no-undef` en error (`frontend/.oxlintrc.json`): ningún deploy con variables indefinidas. Toda edición que borre código se verifica con grep antes del build.

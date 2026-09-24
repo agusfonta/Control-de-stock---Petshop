@@ -23,9 +23,11 @@ class EstadoPedido(str, enum.Enum):
 
 class MetodoPago(str, enum.Enum):
     efectivo = "efectivo"
-    tarjeta = "tarjeta"
+    tarjeta = "tarjeta"  # legacy, se conserva por compatibilidad
     transferencia = "transferencia"
     mercadopago = "mercadopago"
+    debito = "debito"
+    credito = "credito"
 
 
 class TipoDescuento(str, enum.Enum):
@@ -41,11 +43,32 @@ class TipoMovimiento(str, enum.Enum):
     DEVOLUCION_CANCEL = "DEVOLUCION_CANCEL"
 
 
+class TipoMovProveedor(str, enum.Enum):
+    """Códigos de la planilla Distribuidoras: 001 pedido/boleta, 002/003 pagos, 004 nota de crédito."""
+    BOLETA_001 = "BOLETA_001"
+    PAGO_EFECTIVO_002 = "PAGO_EFECTIVO_002"
+    PAGO_TRANSFER_003 = "PAGO_TRANSFER_003"
+    NOTA_CREDITO_004 = "NOTA_CREDITO_004"
+
+
+class TipoMovCaja(str, enum.Enum):
+    ENTRADA = "ENTRADA"
+    SALIDA = "SALIDA"
+
+
 producto_categoria = Table(
     "producto_categoria",
     Base.metadata,
     Column("producto_id", ForeignKey("productos.id", ondelete="CASCADE"), primary_key=True),
     Column("categoria_id", ForeignKey("categorias.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+producto_proveedor = Table(
+    "producto_proveedor",
+    Base.metadata,
+    Column("producto_id", ForeignKey("productos.id", ondelete="CASCADE"), primary_key=True),
+    Column("proveedor_id", ForeignKey("proveedores.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -71,8 +94,11 @@ class Producto(Base):
     stock_minimo = Column(Integer, nullable=False, default=10)
     imagen_url = Column(String(500), nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=True, index=True)
     categorias = relationship("Categoria", secondary=producto_categoria, back_populates="productos")
     movimientos = relationship("MovimientoStock", back_populates="producto")
+    proveedor = relationship("Proveedor", foreign_keys=[proveedor_id])
+    proveedores_alt = relationship("Proveedor", secondary=producto_proveedor)
 
 
 class Cliente(Base):
@@ -135,6 +161,33 @@ class Proveedor(Base):
     nombre = Column(String(120), nullable=False, unique=True)
     contacto = Column(String(120), nullable=True)
     telefono = Column(String(40), nullable=True)
+    alias = Column(String(120), nullable=True)
+    dias_entrega = Column(String(120), nullable=True)
+    movimientos = relationship("MovimientoProveedor", back_populates="proveedor", cascade="all, delete-orphan")
+
+
+class MovimientoProveedor(Base):
+    """Cuenta corriente por distribuidor: boleta 001 suma deuda, pagos 002/003 y N.crédito 004 restan."""
+    __tablename__ = "movimientos_proveedor"
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False, index=True)
+    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    tipo = Column(Enum(TipoMovProveedor), nullable=False)
+    nro = Column(String(60), nullable=False)  # nro boleta; en pagos "PAGO <nro>" o el nro que referencia
+    monto = Column(Float, nullable=False)
+    proveedor = relationship("Proveedor", back_populates="movimientos")
+
+
+class MovimientoCaja(Base):
+    """Caja diaria: ENTRADA (ventas auto + extras manuales) y SALIDA (pagos a proveedor auto + gastos manuales)."""
+    __tablename__ = "movimientos_caja"
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    tipo = Column(Enum(TipoMovCaja), nullable=False)
+    medio = Column(Enum(MetodoPago), nullable=False)  # EF/MP/DB/CD/TR (+ tarjeta legacy)
+    descripcion = Column(String(250), nullable=False)
+    monto = Column(Float, nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"), nullable=True)
 
 
 class User(Base):

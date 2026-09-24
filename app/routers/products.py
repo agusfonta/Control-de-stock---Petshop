@@ -12,7 +12,20 @@ admin = Depends(require_roles("admin"))
 def _out(p: models.Producto) -> schemas.ProductoOut:
     o = schemas.ProductoOut.model_validate(p)
     o.stock_bajo = (p.stock <= (p.stock_minimo or 0))
+    o.proveedor_nombre = p.proveedor.nombre if getattr(p, "proveedor", None) else None
+    o.proveedor_ids_alt = [pr.id for pr in (getattr(p, "proveedores_alt", None) or [])]
     return o
+
+
+def _validar_proveedores(db: Session, proveedor_id: int | None, alts: list[int]) -> None:
+    if proveedor_id is not None and not db.get(models.Proveedor, proveedor_id):
+        raise HTTPException(400, "Proveedor principal no existe")
+    if alts:
+        provs = db.query(models.Proveedor).filter(models.Proveedor.id.in_(alts)).all()
+        if len(provs) != len(set(alts)):
+            raise HTTPException(400, "Uno o mas proveedores alternativos no existen")
+        if proveedor_id is not None and proveedor_id not in set(alts):
+            raise HTTPException(400, "El proveedor principal debe estar entre los alternativos")
 
 def _norm_sku(sku: str | None) -> str | None:
     s = (sku or "").strip()
@@ -26,11 +39,14 @@ def crear(d: schemas.ProductoCreate, db: Session = Depends(get_db)):
     cats = db.query(models.Categoria).filter(models.Categoria.id.in_(d.categoria_ids)).all() if d.categoria_ids else []
     if len(cats) != len(set(d.categoria_ids)):
         raise HTTPException(400, "Una o mas categorias no existen.")
+    _validar_proveedores(db, d.proveedor_id, d.proveedor_ids_alt or [])
+    provs_alt = db.query(models.Proveedor).filter(models.Proveedor.id.in_(d.proveedor_ids_alt)).all() if d.proveedor_ids_alt else []
     p = models.Producto(
         sku=sku, nombre=d.nombre, descripcion=d.descripcion, marca=d.marca,
         unidad=d.unidad, precio_costo=d.precio_costo, precio_venta=d.precio_venta,
         stock=d.stock, stock_minimo=d.stock_minimo, imagen_url=d.imagen_url,
-        activo=d.activo, categorias=cats,
+        activo=d.activo, categorias=cats, proveedor_id=d.proveedor_id,
+        proveedores_alt=provs_alt,
     )
     db.add(p); db.commit(); db.refresh(p)
     return _out(p)
@@ -42,10 +58,20 @@ def listar(
     search: str | None = None,
     stock_bajo: bool = False,
     solo_activos: bool = False,
+    proveedor: int | None = None,
 ):
-    q = db.query(models.Producto).options(joinedload(models.Producto.categorias))
+    q = db.query(models.Producto).options(
+        joinedload(models.Producto.categorias),
+        joinedload(models.Producto.proveedor),
+        joinedload(models.Producto.proveedores_alt),
+    )
     if categoria:
         q = q.join(models.Producto.categorias).filter(models.Categoria.id == categoria)
+    if proveedor:
+        q = q.filter(
+            (models.Producto.proveedor_id == proveedor)
+            | (models.Producto.proveedores_alt.any(models.Proveedor.id == proveedor))
+        )
     if search:
         like = f"%{search}%"
         q = q.filter((models.Producto.nombre.ilike(like)) | (models.Producto.marca.ilike(like)))
@@ -59,7 +85,11 @@ def listar(
 
 @router.get("/{pid}", response_model=schemas.ProductoOut, dependencies=[leer])
 def obtener(pid: int, db: Session = Depends(get_db)):
-    p = db.query(models.Producto).options(joinedload(models.Producto.categorias)).filter(models.Producto.id == pid).first()
+    p = db.query(models.Producto).options(
+        joinedload(models.Producto.categorias),
+        joinedload(models.Producto.proveedor),
+        joinedload(models.Producto.proveedores_alt),
+    ).filter(models.Producto.id == pid).first()
     if not p: raise HTTPException(404, "Producto no encontrado")
     return _out(p)
 
@@ -67,7 +97,7 @@ def obtener(pid: int, db: Session = Depends(get_db)):
 def actualizar(pid: int, d: schemas.ProductoUpdate, db: Session = Depends(get_db)):
     p = db.get(models.Producto, pid)
     if not p: raise HTTPException(404, "Producto no encontrado")
-    data = d.model_dump(exclude_unset=True, exclude={"categoria_ids", "sku"})
+    data = d.model_dump(exclude_unset=True, exclude={"categoria_ids", "sku", "proveedor_id", "proveedor_ids_alt"})
     for k, v in data.items():
         setattr(p, k, v)
     if "sku" in d.model_dump(exclude_unset=True):
@@ -80,6 +110,13 @@ def actualizar(pid: int, d: schemas.ProductoUpdate, db: Session = Depends(get_db
         if len(cats) != len(set(d.categoria_ids)):
             raise HTTPException(400, "Categoria invalida")
         p.categorias = cats
+    dump = d.model_dump(exclude_unset=True)
+    if "proveedor_id" in dump or "proveedor_ids_alt" in dump:
+        nuevo_principal = dump.get("proveedor_id", p.proveedor_id)
+        nuevos_alts = dump.get("proveedor_ids_alt", [pr.id for pr in (p.proveedores_alt or [])])
+        _validar_proveedores(db, nuevo_principal, nuevos_alts or [])
+        p.proveedor_id = nuevo_principal
+        p.proveedores_alt = db.query(models.Proveedor).filter(models.Proveedor.id.in_(nuevos_alts)).all() if nuevos_alts else []
     db.commit(); db.refresh(p)
     return _out(p)
 

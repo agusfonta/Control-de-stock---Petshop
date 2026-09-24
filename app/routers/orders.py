@@ -79,6 +79,11 @@ def crear(d: schemas.PedidoCreate, db: Session = Depends(get_db)):
         for m in movimientos:
             m.pedido_id = ped.id
             db.add(m)
+        db.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.ENTRADA, medio=d.metodo_pago,
+            descripcion=f"Venta #{ped.id} · {cli.nombre}",
+            monto=total, pedido_id=ped.id,
+        ))
         db.commit(); db.refresh(ped)
         return ped
     except HTTPException:
@@ -122,5 +127,10 @@ def cancelar(pid: int, db: Session = Depends(get_db)):
             cantidad=det.cantidad, stock_anterior=ant, stock_nuevo=prod.stock, pedido_id=p.id,
         ))
     p.estado = models.EstadoPedido.cancelado
+    db.add(models.MovimientoCaja(
+        tipo=models.TipoMovCaja.SALIDA, medio=p.metodo_pago,
+        descripcion=f"Anulación venta #{p.id}",
+        monto=p.total, pedido_id=p.id,
+    ))
     db.commit(); db.refresh(p)
     return p

@@ -203,6 +203,17 @@ b.in { color: var(--teal-dark); } b.out { color: var(--danger); } b.dev { color:
 .det-line { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
 .det-total { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
 .det-total b { font-family: 'Poppins'; color: var(--teal-dark); }
+/* Distribuidoras: tarjetas de pedido */
+.peds-list { display: grid; gap: 10px; }
+.ped-card { background: #fff; display: grid; gap: 8px; }
+.ped-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ped-head b.in { font-family: 'Poppins'; font-size: 16px; white-space: nowrap; }
+.ped-meta { margin-top: -4px; }
+.ped-card .det { margin: 0; }
+.ped-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ped-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.ped-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.ped-actions button { margin-left: 0; }
 .cat-li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 button.del {
   background: #fdeeee; color: #c0392b; border: 1.5px solid #f3c1c1;

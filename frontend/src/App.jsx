@@ -90,7 +90,6 @@ const MEDIOS_SEL = Object.entries(MEDIO_TXT).filter(([v]) => v !== 'tarjeta');
 
 function Proveedores() {
   const hoy = new Date().toISOString().slice(0, 10);
-  const [dia, setDia] = useState(hoy);
   const [provs, setProvs] = useState([]);
   const [deudas, setDeudas] = useState([]);
   const [prods, setProds] = useState([]);
@@ -116,17 +115,13 @@ function Proveedores() {
       setProvs(p); setDeudas(d); setProds(pr);
     } catch (e) { setErr(e.message); }
   };
-  const load = async (d) => {
+  const load = async () => {
     setErr('');
-    try { setLista(await api.compras({ fecha: d })); }
+    try { setLista(await api.compras({})); }
     catch (e) { setErr(e.message); }
   };
-  useEffect(() => { loadBase(); load(hoy); }, []);
-  const mover = (d) => {
-    const dt = new Date(dia + 'T12:00:00'); dt.setDate(dt.getDate() + d);
-    const s = dt.toISOString().slice(0, 10); setDia(s); load(s);
-  };
-  const recargarTodo = () => { loadBase(); load(dia); };
+  useEffect(() => { loadBase(); load(); }, []);
+  const recargarTodo = () => { loadBase(); load(); };
 
   const setLinea = (i, patch) => setF({ ...f, lineas: f.lineas.map((l, j) => j === i ? { ...l, ...patch } : l) });
 
@@ -141,7 +136,7 @@ function Proveedores() {
         detalles: f.lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, ...(l.costo === '' ? {} : { costo_unitario: +l.costo }) })),
         pagado: f.pagado, medio_pago: f.pagado ? f.medio : null,
       });
-      setF({ proveedor_id: '', fecha_pedido: dia, nro: '', lineas: [{ producto_id: '', cantidad: 1, costo: '' }], pagado: false, medio: 'transferencia' });
+      setF({ proveedor_id: '', fecha_pedido: hoy, nro: '', lineas: [{ producto_id: '', cantidad: 1, costo: '' }], pagado: false, medio: 'transferencia' });
       setTried(false); recargarTodo();
     } catch (e) { alert(e.message); }
   };
@@ -187,11 +182,6 @@ function Proveedores() {
   return <section>
     <div className="sec-head"><h2>Distribuidoras · Pedidos</h2><button className="fab" onClick={() => setOpen(true)}>+ Nueva</button></div>
     <Err e={err} />
-    <div className="row day-picker">
-      <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
-      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value); }} />
-      <button className="ghost" onClick={() => mover(1)} disabled={dia >= hoy}>Mañana ›</button>
-    </div>
     <div className="sale-box">
       <h3>Registrar pedido</h3>
       <div className="row">
@@ -228,24 +218,40 @@ function Proveedores() {
         <button onClick={guardar}>Guardar pedido</button>
       </div>
     </div>
-    <h3>Pedidos del día</h3>
-    {lista.length === 0 ? <p className="muted">Sin pedidos este día.</p> :
-      <ul>{lista.map(c => <li key={c.id}>
-        <b>#{c.id} · {c.proveedor_nombre}</b> · boleta {c.nro_boleta} · {fmt(c.monto)}<br />
-        <small>{(c.detalles || []).map(d => `${d.producto_nombre || `prod ${d.producto_id}`} x${d.cantidad}`).join(' · ')}</small><br />
-        {c.fecha_entrega
-          ? <span className="badge ok">Entregada {(c.fecha_entrega || '').slice(0, 10)}</span>
-          : <span className="badge out">Sin entregar</span>}{' '}
-        {c.pagado
-          ? <span className="badge ok">Pagada · {MEDIO_TXT[c.medio_pago] || c.medio_pago}</span>
-          : <span className="badge out">Pendiente de pago</span>}
-        <div className="row">
-          {!c.fecha_entrega && <button onClick={() => entregar(c)}>marcar entregado</button>}
-          {!c.pagado && <button onClick={() => pagar(c)}>marcar pagado</button>}
-          <button onClick={() => abrirEdit(c)}>editar</button>
-          {!c.fecha_entrega && !c.pagado && <button onClick={() => borrar(c)}>borrar</button>}
-        </div>
-      </li>)}</ul>}
+    <h3>Pedidos {lista.length > 0 && <span className="muted">· {lista.length}</span>}</h3>
+    {lista.length === 0 ? <p className="muted">Sin pedidos todavía. Registrá el primero arriba.</p> :
+      <ul className="peds-list">{lista.map(c => {
+        const dets = c.detalles || [];
+        const fechaPed = (c.fecha_pedido || '').slice(0, 10);
+        return <li key={c.id} className="ped-card">
+          <div className="ped-head">
+            <b>#{c.id} · {c.proveedor_nombre}</b>
+            <b className="in">{fmt(c.monto)}</b>
+          </div>
+          <div className="muted small ped-meta">Boleta {c.nro_boleta} · Pedido {fechaPed} · {dets.length} producto{dets.length === 1 ? '' : 's'}</div>
+          {dets.length > 0 && <div className="det">
+            {dets.map((d, i) => <div className="det-line" key={i}>
+              <span>{d.producto_nombre || `prod ${d.producto_id}`} ×{d.cantidad}</span>
+              <span>{fmt(d.subtotal)}</span>
+            </div>)}
+          </div>}
+          <div className="ped-foot">
+            <span className="ped-badges">
+              {c.fecha_entrega
+                ? <span className="badge ok">Entregada {(c.fecha_entrega || '').slice(0, 10)}</span>
+                : <span className="badge out">Sin entregar</span>}{' '}
+              {c.pagado
+                ? <span className="badge ok">Pagada · {MEDIO_TXT[c.medio_pago] || c.medio_pago}</span>
+                : <span className="badge out">Pendiente de pago</span>}
+            </span>
+            <span className="ped-actions">
+              {!c.fecha_entrega && <button onClick={() => entregar(c)}>marcar entregado</button>}
+              {!c.pagado && <button onClick={() => pagar(c)}>marcar pagado</button>}
+              <button onClick={() => abrirEdit(c)}>editar</button>
+              {!c.fecha_entrega && !c.pagado && <button onClick={() => borrar(c)}>borrar</button>}
+            </span>
+          </div>
+        </li>; })}</ul>}
     <Modal open={!!edit} onClose={() => setEdit(null)} title={edit ? `Pedido #${edit.id} · ${edit.proveedor_nombre}` : 'Editar'} wide>
       <div className="grid">
         <Field label="N° Boleta"><input value={ef.nro || ''} onChange={e => setEf({ ...ef, nro: e.target.value })} /></Field>

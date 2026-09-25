@@ -96,8 +96,6 @@ function Proveedores() {
   const [prods, setProds] = useState([]);
   const [lista, setLista] = useState([]);
   const [err, setErr] = useState('');
-  const [fProv, setFProv] = useState('');
-  const [fPago, setFPago] = useState('');
   const [f, setF] = useState({ proveedor_id: '', fecha_pedido: hoy, nro: '', lineas: [{ producto_id: '', cantidad: 1, costo: '' }], pagado: false, medio: 'transferencia' });
   const [tried, setTried] = useState(false);
   const [open, setOpen] = useState(false);
@@ -118,18 +116,17 @@ function Proveedores() {
       setProvs(p); setDeudas(d); setProds(pr);
     } catch (e) { setErr(e.message); }
   };
-  const load = async (d, fp, fg) => {
+  const load = async (d) => {
     setErr('');
-    try { setLista(await api.compras({ fecha: d, proveedor: fp || undefined, pagada: fg === '' ? undefined : fg })); }
+    try { setLista(await api.compras({ fecha: d })); }
     catch (e) { setErr(e.message); }
   };
-  useEffect(() => { loadBase(); load(hoy, '', ''); }, []);
+  useEffect(() => { loadBase(); load(hoy); }, []);
   const mover = (d) => {
     const dt = new Date(dia + 'T12:00:00'); dt.setDate(dt.getDate() + d);
-    const s = dt.toISOString().slice(0, 10); setDia(s); load(s, fProv, fPago);
+    const s = dt.toISOString().slice(0, 10); setDia(s); load(s);
   };
-  const refiltrar = (fp, fg) => load(dia, fp, fg);
-  const recargarTodo = () => { loadBase(); load(dia, fProv, fPago); };
+  const recargarTodo = () => { loadBase(); load(dia); };
 
   const setLinea = (i, patch) => setF({ ...f, lineas: f.lineas.map((l, j) => j === i ? { ...l, ...patch } : l) });
 
@@ -192,20 +189,8 @@ function Proveedores() {
     <Err e={err} />
     <div className="row day-picker">
       <button className="ghost" onClick={() => mover(-1)}>‹ Ayer</button>
-      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value, fProv, fPago); }} />
+      <input type="date" value={dia} max={hoy} onChange={e => { setDia(e.target.value); load(e.target.value); }} />
       <button className="ghost" onClick={() => mover(1)} disabled={dia >= hoy}>Mañana ›</button>
-    </div>
-    <div className="row">
-      <Field label="Distribuidora">
-        <select value={fProv} onChange={e => { setFProv(e.target.value); refiltrar(e.target.value, fPago); }}>
-          <option value="">Todas</option>{provs.map(p => <option key={p.id} value={p.id}>{p.nombre} · debe {fmt(deudaDe(p.id))}</option>)}
-        </select>
-      </Field>
-      <Field label="Estado">
-        <select value={fPago} onChange={e => { setFPago(e.target.value); refiltrar(fProv, e.target.value); }}>
-          <option value="">Todas</option><option value="false">Pendientes de pago</option><option value="true">Pagadas</option>
-        </select>
-      </Field>
     </div>
     <div className="sale-box">
       <h3>Registrar pedido</h3>
@@ -224,7 +209,7 @@ function Proveedores() {
       {f.lineas.map((l, i) => (
         <div className="line" key={i}>
           <Field className="lp" label="Producto" error={tried && !l.producto_id ? 'Elegí uno' : ''}>
-            <ProdBuscador prods={prods} value={l.producto_id} onChange={id => setLinea(i, { producto_id: id })} />
+            <ProdBuscador prods={prods} value={l.producto_id} allowSinStock onChange={id => setLinea(i, { producto_id: id })} />
           </Field>
           <Field className="lc" label="Cantidad" error={tried && !(+l.cantidad >= 1) ? 'Mín 1' : ''}>
             <input type="number" min="1" value={l.cantidad} onChange={e => setLinea(i, { cantidad: e.target.value })} className={tried && !(+l.cantidad >= 1) ? 'invalid' : ''} />
@@ -273,7 +258,7 @@ function Proveedores() {
         <h3>Líneas (editable hasta entregar)</h3>
         {(ef.lineas || []).map((l, i) => (
           <div className="line" key={i}>
-            <Field className="lp" label="Producto"><ProdBuscador prods={prods} value={l.producto_id} onChange={id => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x) })} /></Field>
+            <Field className="lp" label="Producto"><ProdBuscador prods={prods} value={l.producto_id} allowSinStock onChange={id => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, producto_id: id } : x) })} /></Field>
             <Field className="lc" label="Cantidad"><input type="number" min="1" value={l.cantidad} onChange={e => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, cantidad: e.target.value } : x) })} /></Field>
             <Field className="lv" label="Costo unit."><input type="number" min="0" value={l.costo} onChange={e => setEf({ ...ef, lineas: ef.lineas.map((x, j) => j === i ? { ...x, costo: e.target.value } : x) })} /></Field>
             {ef.lineas.length > 1 && <button className="ghost" onClick={() => setEf({ ...ef, lineas: ef.lineas.filter((_, j) => j !== i) })}>-</button>}
@@ -506,7 +491,7 @@ function Productos({ isAdmin }) {
 }
 
 /* ---------- ProdBuscador (Task 3) ---------- */
-function ProdBuscador({ prods, value, onChange }) {
+function ProdBuscador({ prods, value, onChange, allowSinStock = false }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const norm = s => (s || '').toLowerCase();
@@ -536,8 +521,8 @@ function ProdBuscador({ prods, value, onChange }) {
           {sugs.map(p => (
             <li
               key={p.id}
-              className={'sug-item' + (p.stock === 0 ? ' disabled' : '')}
-              onMouseDown={p.stock > 0 ? () => { onChange(p.id); setQuery(p.nombre); setOpen(false); } : e => e.preventDefault()}
+              className={'sug-item' + (!allowSinStock && p.stock === 0 ? ' disabled' : '')}
+              onMouseDown={(allowSinStock || p.stock > 0) ? () => { onChange(p.id); setQuery(p.nombre); setOpen(false); } : e => e.preventDefault()}
             >
               <span>{p.nombre}{p.marca ? ` · ${p.marca}` : ''}</span>
               {p.stock === 0

@@ -630,6 +630,7 @@ function Ventas() {
 
   const eCliente = (!f.cliente_id && (tried || clienteQuery.trim())) ? 'Elegí un cliente o crealo' : '';
   const eDtoPedido = errDtoValor(f.descuento_tipo, f.descuento_valor);
+  const fmt = (n) => '$' + (+(n || 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 
   return <section>
     <div className="sec-head"><h2>Ventas · Hoy</h2></div>
@@ -691,11 +692,33 @@ function Ventas() {
         <button onClick={submit}>Guardar venta</button>
       </div>
     </div>
-    <h3>Ventas de hoy</h3>
+    <h3>Ventas de hoy {pedidos.length > 0 && <span className="muted">· {pedidos.length}</span>}</h3>
     {pedidos.length === 0 ? <p className="muted">Todavía no hay ventas hoy.</p> :
-      <ul>{pedidos.map(p => <li key={p.id}>#{p.id} · {cliNombre(p.cliente_id)} · ${p.total} · {p.estado} · {MEDIO_TXT[p.metodo_pago] || p.metodo_pago}<br />
-        <small>{(p.detalles || []).map(d => `${d.nombre_snapshot} x${d.cantidad}`).join(' · ')}</small>
-        {p.estado === 'pagado' && <button onClick={() => cancelar(p)}>cancelar</button>}</li>)}</ul>}
+      <ul className="peds-list">{pedidos.map(p => {
+        const dets = p.detalles || [];
+        return <li key={p.id} className="ped-card">
+          <div className="ped-head">
+            <b>#{p.id} · {cliNombre(p.cliente_id)}</b>
+            <b className="in">{fmt(p.total)}</b>
+          </div>
+          <div className="muted small ped-meta">{MEDIO_TXT[p.metodo_pago] || p.metodo_pago} · {dets.length} producto{dets.length === 1 ? '' : 's'}</div>
+          {dets.length > 0 && <div className="det">
+            {dets.map((d, i) => <div className="det-line" key={i}>
+              <span>{d.nombre_snapshot} ×{d.cantidad}</span>
+              <span>{fmt(d.subtotal_linea)}</span>
+            </div>)}
+          </div>}
+          <div className="ped-foot">
+            <span className="ped-badges">
+              {p.estado === 'pagado'
+                ? <span className="badge ok">Pagada</span>
+                : <span className="badge out">{p.estado}</span>}
+            </span>
+            <span className="ped-actions">
+              {p.estado === 'pagado' && <button onClick={() => cancelar(p)}>cancelar</button>}
+            </span>
+          </div>
+        </li>; })}</ul>}
 
     {/* Modal nuevo cliente — abre centrado y ocupa el ancho completo del modal */}
     <Modal open={showNuevoCliente} onClose={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }} title="Nuevo cliente" wide>

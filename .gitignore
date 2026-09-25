@@ -1,10 +1,22 @@
-# Pet Shop - Control de Stock (Backend FastAPI)
-Backend profesional escalable: FastAPI + SQLAlchemy 2.0 + PostgreSQL (prod) / SQLite (demo local).
-
+# Python
 __pycache__/
 *.pyc
+
+# Bases de datos locales
 *.db
+*.db.bak*
+*.bak
 *.sqlite*
+*.sqlite3
+
+# Variables de entorno
 .env
+
+# Node
 node_modules/
 dist/
+
+# OpenSpec / OpenCode
+.agents/
+.opencode/
+openspec/

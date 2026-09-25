@@ -9,6 +9,7 @@
     "URLSearchParams": "readonly",
     "Event": "readonly",
     "setTimeout": "readonly",
+    "clearTimeout": "readonly",
     "confirm": "readonly",
     "alert": "readonly"
   },

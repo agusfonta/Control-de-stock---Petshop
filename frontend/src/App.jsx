@@ -8,6 +8,7 @@ const ventasState = {
   f: { cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 },
   lineas: [{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }],
   clienteQuery: '',
+  pagos: [{ metodo: 'efectivo', monto: '' }],
 };
 
 export default function App() {
@@ -554,11 +555,39 @@ function Ventas() {
   const [f, setF] = useState(() => ventasState.f);
   const [lineas, setLineas] = useState(() => ventasState.lineas);
   const [clienteQuery, setClienteQuery] = useState(() => ventasState.clienteQuery);
+  const [pagos, setPagos] = useState(() => ventasState.pagos);
+  const [busy, setBusy] = useState(false);
 
   // Sincronizar con ventasState en cada cambio
   const setFP = v => { const val = typeof v === 'function' ? v(f) : v; ventasState.f = val; setF(val); };
   const setLineasP = v => { const val = typeof v === 'function' ? v(lineas) : v; ventasState.lineas = val; setLineas(val); };
   const setClienteQueryP = v => { ventasState.clienteQuery = v; setClienteQuery(v); };
+  const setPagosP = v => { const val = typeof v === 'function' ? v(pagos) : v; ventasState.pagos = val; setPagos(val); };
+
+  // Total estimado (espeja el cálculo del backend para validar el pago mixto)
+  const aplicarDtoEst = (base, tipo, valor) => {
+    const b = +base || 0, v = +valor || 0;
+    if (tipo === 'ningun' || v === 0) return Math.round(b * 100) / 100;
+    if (tipo === 'porcentaje') return Math.round(b * (1 - v / 100) * 100) / 100;
+    return Math.round((b - v) * 100) / 100;
+  };
+  const totalEst = (() => {
+    let sub = 0;
+    for (const l of lineas) {
+      const p = prods.find(x => String(x.id) === String(l.producto_id));
+      if (!p || !(+l.cantidad >= 1)) continue;
+      sub = Math.round((sub + aplicarDtoEst((+p.precio_venta || 0) * (+l.cantidad || 0), l.descuento_tipo, +l.descuento_valor || 0)) * 100) / 100;
+    }
+    return aplicarDtoEst(sub, f.descuento_tipo, +f.descuento_valor || 0);
+  })();
+  const cargado = Math.round(pagos.reduce((a, p) => a + (+p.monto || 0), 0) * 100) / 100;
+  const restante = Math.round((totalEst - cargado) * 100) / 100;
+  const pagosOk = pagos.length > 0 && pagos.length <= 5
+    && pagos.every(p => p.metodo && Number.isFinite(+p.monto) && +p.monto > 0)
+    && Math.abs(restante) <= 0.01;
+  const pagoTxt = (p) => p.es_mixto && (p.pagos || []).length > 1
+    ? p.pagos.map(x => `${MEDIO_SHORT[x.metodo] || x.metodo} $${(+x.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join(' + ')
+    : (MEDIO_TXT[p.metodo_pago] || p.metodo_pago);
 
   const [clienteOpen, setClienteOpen] = useState(false);
   const [tried, setTried] = useState(false);
@@ -579,9 +608,11 @@ function Ventas() {
   const resetPedido = () => {
     const fInit = { cliente_id: '', metodo_pago: 'efectivo', descuento_tipo: 'ningun', descuento_valor: 0 };
     const lineasInit = [{ producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }];
+    const pagosInit = [{ metodo: 'efectivo', monto: '' }];
     ventasState.f = fInit; setF(fInit);
     ventasState.lineas = lineasInit; setLineas(lineasInit);
     ventasState.clienteQuery = ''; setClienteQuery('');
+    ventasState.pagos = pagosInit; setPagos(pagosInit);
     setTried(false);
     setShowNuevoCliente(false);
     setNuevoClienteErr('');
@@ -589,14 +620,17 @@ function Ventas() {
 
   const submit = async () => {
     setTried(true);
+    if (busy) return;
     if (!f.cliente_id) return;
     if (lineas.some(l => !l.producto_id)) return;
     if (lineas.some(l => errEnteroMin(l.cantidad, 1) || errDtoValor(l.descuento_tipo, l.descuento_valor))) return;
     if (errDtoValor(f.descuento_tipo, f.descuento_valor)) return;
+    if (!pagosOk) return;
+    setBusy(true);
     try {
-      const r = await api.createPedido({ cliente_id: +f.cliente_id, metodo_pago: f.metodo_pago, descuento_tipo: f.descuento_tipo, descuento_valor: +f.descuento_valor, detalles: lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, descuento_tipo: l.descuento_tipo, descuento_valor: +l.descuento_valor })) });
+      const r = await api.createPedido({ cliente_id: +f.cliente_id, metodo_pago: pagos[0].metodo, descuento_tipo: f.descuento_tipo, descuento_valor: +f.descuento_valor, detalles: lineas.map(l => ({ producto_id: +l.producto_id, cantidad: +l.cantidad, descuento_tipo: l.descuento_tipo, descuento_valor: +l.descuento_valor })), pagos: pagos.map(p => ({ metodo: p.metodo, monto: +p.monto })) });
       alert(`Venta #${r.id} registrada · total $${r.total}`); resetPedido(); load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
 
   const cliNombre = (id) => (clientes.find(c => c.id === id) || {}).nombre || `cli ${id}`;
@@ -667,7 +701,7 @@ function Ventas() {
             )}
           </div>
         </Field>
-        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); }}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
+        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); setPagosP(prev => (prev.length === 1 ? [{ ...prev[0], metodo: v }] : prev)); }}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
         <Field label="Descuento del pedido"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
         <Field label="Valor del descuento" hint="Si no hay dto, 0" error={eDtoPedido}><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} className={eDtoPedido ? 'invalid' : ''} /></Field>
       </div>
@@ -686,10 +720,28 @@ function Ventas() {
           <button className="ghost" title="Quitar producto" onClick={() => setLineasP(lineas.filter((_, j) => j !== i))}>-</button>
         )}
       </div>; })}
+      <h3>Pagos</h3>
+      {pagos.map((p, i) => {
+        const eMonto = tried && !(Number.isFinite(+p.monto) && +p.monto > 0) ? 'Monto mayor a 0' : '';
+        return <div className="line" key={i}>
+          <Field className="lp" label={`Medio ${i + 1}`}>
+            <select value={p.metodo} onChange={e => setPagosP(pagos.map((x, j) => j === i ? { ...x, metodo: e.target.value } : x))}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>
+          </Field>
+          <Field className="lc" label="Monto" hint="Mayor a 0" error={eMonto}><input type="number" min="0.01" step="0.01" value={p.monto} onChange={e => setPagosP(pagos.map((x, j) => j === i ? { ...x, monto: e.target.value } : x))} className={eMonto ? 'invalid' : ''} /></Field>
+          {pagos.length > 1 && (
+            <button className="ghost" title="Quitar pago" onClick={() => setPagosP(pagos.filter((_, j) => j !== i))}>-</button>
+          )}
+        </div>; })}
+      <div className="modal-actions">
+        {pagos.length < 5 && <button className="ghost" onClick={() => setPagosP([...pagos, { metodo: f.metodo_pago, monto: '' }])}>Agregar pago</button>}
+        <span style={{ flex: 1 }} />
+        <span className="muted small">Total: <b>{fmt(totalEst)}</b> · Cargado: <b>{fmt(cargado)}</b> · {Math.abs(restante) <= 0.01 ? 'Cuadra ✓' : restante > 0 ? `Faltan ${fmt(restante)}` : `Sobran ${fmt(-restante)}`}</span>
+      </div>
+      {tried && !pagosOk && <p className="err">Los pagos deben sumar el total de la venta, con montos mayores a 0.</p>}
       <div className="modal-actions">
         <button className="ghost" onClick={() => setLineasP([...lineas, { producto_id: '', cantidad: 1, descuento_tipo: 'ningun', descuento_valor: 0 }])}>Agregar producto</button>
         <span style={{ flex: 1 }} />
-        <button onClick={submit}>Guardar venta</button>
+        <button onClick={submit} disabled={busy}>{busy ? 'Guardando...' : 'Guardar venta'}</button>
       </div>
     </div>
     <h3>Ventas de hoy {pedidos.length > 0 && <span className="muted">· {pedidos.length}</span>}</h3>
@@ -701,7 +753,7 @@ function Ventas() {
             <b>#{p.id} · {cliNombre(p.cliente_id)}</b>
             <b className="in">{fmt(p.total)}</b>
           </div>
-          <div className="muted small ped-meta">{MEDIO_TXT[p.metodo_pago] || p.metodo_pago} · {dets.length} producto{dets.length === 1 ? '' : 's'}</div>
+          <div className="muted small ped-meta">{pagoTxt(p)} · {dets.length} producto{dets.length === 1 ? '' : 's'}</div>
           {dets.length > 0 && <div className="det">
             {dets.map((d, i) => <div className="det-line" key={i}>
               <span>{d.nombre_snapshot} ×{d.cantidad}</span>

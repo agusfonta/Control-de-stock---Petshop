@@ -111,6 +111,18 @@ class ClienteOut(ClienteCreate):
 
 
 # ---------- Pedidos ----------
+class PagoIn(BaseModel):
+    metodo: MetodoPago
+    monto: float = Field(gt=0, le=1000000000)
+
+
+class PagoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    metodo: MetodoPago
+    monto: float
+
+
 class DetalleIn(BaseModel):
     producto_id: int
     cantidad: int = Field(ge=1)
@@ -132,6 +144,7 @@ class PedidoCreate(BaseModel):
     descuento_tipo: TipoDescuento = TipoDescuento.ningun
     descuento_valor: float = Field(default=0, ge=0)
     detalles: List[DetalleIn] = Field(min_length=1)
+    pagos: Optional[List[PagoIn]] = None
 
     @model_validator(mode="after")
     def _desc_ok(self):
@@ -139,6 +152,8 @@ class PedidoCreate(BaseModel):
             raise ValueError("descuento porcentaje pedido max 100")
         if self.descuento_tipo == TipoDescuento.ningun and self.descuento_valor != 0:
             raise ValueError("si tipo es ningun, valor debe ser 0")
+        if self.pagos is not None and len(self.pagos) == 0:
+            raise ValueError("si se envían pagos, la lista no puede estar vacía")
         return self
 
 
@@ -167,6 +182,8 @@ class PedidoOut(BaseModel):
     subtotal: float
     total: float
     detalles: List[DetalleOut] = []
+    pagos: List[PagoOut] = []
+    es_mixto: bool = False
 
 
 # ---------- Stock / Proveedor / Auth ----------

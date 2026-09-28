@@ -126,6 +126,17 @@ class Pedido(Base):
     total = Column(Float, nullable=False, default=0)
     cliente = relationship("Cliente", back_populates="pedidos")
     detalles = relationship("DetallePedido", back_populates="pedido", cascade="all, delete-orphan")
+    pagos = relationship("PagoPedido", back_populates="pedido", cascade="all, delete-orphan")
+
+
+class PagoPedido(Base):
+    """Desglose de medios de pago de una venta (uno o varios por pedido)."""
+    __tablename__ = "pagos_pedido"
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False, index=True)
+    metodo = Column(Enum(MetodoPago), nullable=False)
+    monto = Column(Float, nullable=False)
+    pedido = relationship("Pedido", back_populates="pagos")
 
 
 class DetallePedido(Base):

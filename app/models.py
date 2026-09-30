@@ -1,11 +1,11 @@
 """Modelos SQLAlchemy - PetShop."""
-from datetime import datetime
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Text,
+    Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Table, Text,
 )
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import utc_now
 import enum
 
 
@@ -88,8 +88,8 @@ class Producto(Base):
     descripcion = Column(Text, nullable=True)
     marca = Column(String(80), nullable=True)
     unidad = Column(Enum(Unidad), nullable=False, default=Unidad.unidad)
-    precio_costo = Column(Float, nullable=False, default=0)
-    precio_venta = Column(Float, nullable=False)
+    precio_costo = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_venta = Column(Numeric(14, 2), nullable=False)
     stock = Column(Integer, nullable=False, default=0)
     stock_minimo = Column(Integer, nullable=False, default=10)
     imagen_url = Column(String(500), nullable=True)
@@ -116,14 +116,14 @@ class Pedido(Base):
     __tablename__ = "pedidos"
     id = Column(Integer, primary_key=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
-    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    fecha = Column(DateTime, nullable=False, default=utc_now)
     estado = Column(Enum(EstadoPedido), nullable=False, default=EstadoPedido.pagado)
     metodo_pago = Column(Enum(MetodoPago), nullable=False)
     moneda = Column(String(3), nullable=False, default="ARS")
     descuento_tipo = Column(Enum(TipoDescuento), nullable=False, default=TipoDescuento.ningun)
-    descuento_valor = Column(Float, nullable=False, default=0)
-    subtotal = Column(Float, nullable=False, default=0)
-    total = Column(Float, nullable=False, default=0)
+    descuento_valor = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal = Column(Numeric(14, 2), nullable=False, default=0)
+    total = Column(Numeric(14, 2), nullable=False, default=0)
     cliente = relationship("Cliente", back_populates="pedidos")
     detalles = relationship("DetallePedido", back_populates="pedido", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", back_populates="pedido", cascade="all, delete-orphan")
@@ -135,7 +135,7 @@ class PagoPedido(Base):
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False, index=True)
     metodo = Column(Enum(MetodoPago), nullable=False)
-    monto = Column(Float, nullable=False)
+    monto = Column(Numeric(14, 2), nullable=False)
     pedido = relationship("Pedido", back_populates="pagos")
 
 
@@ -145,11 +145,11 @@ class DetallePedido(Base):
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     cantidad = Column(Integer, nullable=False)
-    precio_unitario = Column(Float, nullable=False)  # snapshot
+    precio_unitario = Column(Numeric(14, 2), nullable=False)  # snapshot
     nombre_snapshot = Column(String(120), nullable=False)
     descuento_tipo = Column(Enum(TipoDescuento), nullable=False, default=TipoDescuento.ningun)
-    descuento_valor = Column(Float, nullable=False, default=0)
-    subtotal_linea = Column(Float, nullable=False)
+    descuento_valor = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_linea = Column(Numeric(14, 2), nullable=False)
     pedido = relationship("Pedido", back_populates="detalles")
 
 
@@ -163,7 +163,7 @@ class MovimientoStock(Base):
     stock_nuevo = Column(Integer, nullable=False)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=True)
     compra_id = Column(Integer, ForeignKey("compras.id", ondelete="SET NULL"), nullable=True)
-    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    fecha = Column(DateTime, nullable=False, default=utc_now)
     producto = relationship("Producto", back_populates="movimientos")
 
 
@@ -183,10 +183,10 @@ class MovimientoProveedor(Base):
     __tablename__ = "movimientos_proveedor"
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False, index=True)
-    fecha = Column(DateTime, nullable=False, default=datetime.utcnow)
+    fecha = Column(DateTime, nullable=False, default=utc_now)
     tipo = Column(Enum(TipoMovProveedor), nullable=False)
     nro = Column(String(60), nullable=False)  # nro boleta; en pagos "PAGO <nro>" o el nro que referencia
-    monto = Column(Float, nullable=False)
+    monto = Column(Numeric(14, 2), nullable=False)
     proveedor = relationship("Proveedor", back_populates="movimientos")
 
 
@@ -194,11 +194,11 @@ class MovimientoCaja(Base):
     """Caja diaria: ENTRADA (ventas auto + extras manuales) y SALIDA (pagos a proveedor auto + gastos manuales)."""
     __tablename__ = "movimientos_caja"
     id = Column(Integer, primary_key=True)
-    fecha = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    fecha = Column(DateTime, nullable=False, default=utc_now, index=True)
     tipo = Column(Enum(TipoMovCaja), nullable=False)
     medio = Column(Enum(MetodoPago), nullable=False)  # EF/MP/DB/CD/TR (+ tarjeta legacy)
     descripcion = Column(String(250), nullable=False)
-    monto = Column(Float, nullable=False)
+    monto = Column(Numeric(14, 2), nullable=False)
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"), nullable=True)
     compra_id = Column(Integer, ForeignKey("compras.id", ondelete="SET NULL"), nullable=True)
 
@@ -208,12 +208,12 @@ class Compra(Base):
     __tablename__ = "compras"
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False, index=True)
-    fecha_pedido = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    fecha_pedido = Column(DateTime, nullable=False, default=utc_now, index=True)
     nro_boleta = Column(String(60), nullable=False)
     fecha_entrega = Column(DateTime, nullable=True)  # null = "sin entregar"
     pagado = Column(Boolean, nullable=False, default=False)
     medio_pago = Column(Enum(MetodoPago), nullable=True)
-    monto = Column(Float, nullable=False, default=0)  # calculado de las líneas
+    monto = Column(Numeric(14, 2), nullable=False, default=0)  # calculado de las líneas
     proveedor = relationship("Proveedor")
     detalles = relationship("DetalleCompra", back_populates="compra", cascade="all, delete-orphan")
 
@@ -224,8 +224,8 @@ class DetalleCompra(Base):
     compra_id = Column(Integer, ForeignKey("compras.id", ondelete="CASCADE"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     cantidad = Column(Integer, nullable=False)
-    costo_unitario = Column(Float, nullable=False)  # snapshot (default: precio_costo)
-    subtotal = Column(Float, nullable=False)
+    costo_unitario = Column(Numeric(14, 2), nullable=False)  # snapshot (default: precio_costo)
+    subtotal = Column(Numeric(14, 2), nullable=False)
     compra = relationship("Compra", back_populates="detalles")
 
 

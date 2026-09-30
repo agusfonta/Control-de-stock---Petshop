@@ -9,10 +9,11 @@ class TestAplicarDescuento:
         """No discount returns base."""
         from app.services.discounts import aplicar_descuento
         from app.models import TipoDescuento
+        from app.services.money import money
 
         assert aplicar_descuento(1000.0, TipoDescuento.ningun.value, 0) == 1000.0
         assert aplicar_descuento(1000.0, TipoDescuento.ningun.value, 10) == 1000.0
-        assert aplicar_descuento(999.99, "ningun", 0) == 999.99
+        assert aplicar_descuento(999.99, "ningun", 0) == money(999.99)
 
     def test_zero_valor_returns_base(self):
         """Zero discount value returns base regardless of type."""

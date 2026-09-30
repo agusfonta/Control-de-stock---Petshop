@@ -1,0 +1,17 @@
+# Animall Alembic
+
+La carpeta contiene las migraciones de esquema de la base de datos.
+
+Flujo previsto:
+
+```text
+modelo SQLAlchemy
+      ↓
+alembic revision --autogenerate -m "descripcion"
+      ↓
+revisión humana de la migración
+      ↓
+alembic upgrade head
+```
+
+No ejecutar `--autogenerate` y aplicar una migración sin revisar el archivo generado.

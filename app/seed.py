@@ -4,17 +4,18 @@ Uso:
     python -m app.seed            # crea solo si la DB está vacía
     python -m app.seed --reset    # borra todo y recarga la demo completa
 
-En Render se ejecuta sin --reset vía start.sh con SEED_ON_START=true,
-así el primer deploy carga la demo y los siguientes conservan los datos.
+Puede ejecutarse al arrancar mediante start.sh con SEED_ON_START=true,
+pero el Blueprint de producción lo deja desactivado por defecto. Nunca usar --reset contra la base real.
 """
 import argparse
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from app.core.database import SessionLocal, Base, engine
+from app.core.database import SessionLocal
 from app import models
 from app.core.security import hash_password
 from app.services.discounts import aplicar_descuento
+from app.core.time import utc_now
 
 
 def reset_db(db):
@@ -90,7 +91,6 @@ def main():
     ap.add_argument("--reset", action="store_true", help="borra todo y recarga la demo")
     args = ap.parse_args()
 
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         if db.query(models.Categoria).first():
@@ -100,7 +100,7 @@ def main():
             reset_db(db)
             print("DB limpiada (--reset)")
 
-        hoy = datetime.now().replace(microsecond=0)
+        hoy = utc_now().replace(microsecond=0)
         manana = lambda h: hoy.replace(hour=h, minute=10)  # noqa: E731 ventas repartidas hoy
 
         # ---------- Categorías ----------

@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 import logging
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import engine
 from app import models  # noqa: registra modelos
 from app.routers import categories, products, customers, orders, inventory, auth, caja, compras
 
-Base.metadata.create_all(bind=engine)
 
 if settings.secret_key == "cambiar-en-produccion-petshop-demo-2026":
     logging.getLogger("uvicorn").warning(
@@ -14,7 +14,8 @@ if settings.secret_key == "cambiar-en-produccion-petshop-demo-2026":
     )
 
 app = FastAPI(title="PetShop Stock API", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=cors_origins or ["*"], allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(auth.router)
 app.include_router(categories.router)
@@ -29,4 +30,6 @@ app.include_router(compras.router)
 
 @app.get("/health")
 def health():
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
     return {"ok": True, "demo": "Swagger en /docs"}

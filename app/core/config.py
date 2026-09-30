@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -7,12 +7,12 @@ class Settings(BaseSettings):
     # Para prod/Postgres: DATABASE_URL=postgresql+psycopg2://petshop:petshop@db:5432/petshop
     database_url: str = "sqlite:///./petshop.db"
     secret_key: str = "cambiar-en-produccion-petshop-demo-2026"
+    app_timezone: str = "America/Argentina/Mendoza"
+    cors_origins: str = "*"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

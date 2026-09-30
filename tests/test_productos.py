@@ -430,3 +430,52 @@ class TestProductosImportCSV:
         resp = await client.post("/productos/import-csv", files=files, headers=admin_headers)
         assert resp.status_code == 400
         assert "columnas mínimas" in resp.json()["detail"]
+class TestProductosStockAuditoria:
+    async def test_create_producto_with_stock_creates_adjustment_movement(self, client: AsyncClient, admin_headers, session):
+        from tests.factories import create_categoria, create_proveedor
+        cat = create_categoria(session, nombre="CatStockCreate")
+        prov = create_proveedor(session, nombre="ProvStockCreate")
+        resp = await client.post(
+            "/productos",
+            json={
+                "nombre": "Producto con stock inicial",
+                "precio_costo": 50,
+                "precio_venta": 100,
+                "stock": 7,
+                "categoria_ids": [cat.id],
+                "proveedor_id": prov.id,
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+        product_id = resp.json()["id"]
+        movs = await client.get(f"/stock/movimientos?producto_id={product_id}", headers=admin_headers)
+        assert movs.status_code == 200
+        data = movs.json()
+        assert len(data) == 1
+        assert data[0]["tipo"] == "AJUSTE"
+        assert data[0]["cantidad"] == 7
+        assert data[0]["stock_anterior"] == 0
+        assert data[0]["stock_nuevo"] == 7
+
+    async def test_update_producto_stock_creates_adjustment(self, client: AsyncClient, admin_headers, session):
+        from tests.factories import create_categoria, create_proveedor, create_producto
+        cat = create_categoria(session, nombre="CatStockUpdate")
+        prov = create_proveedor(session, nombre="ProvStockUpdate")
+        prod = create_producto(session, nombre="Producto ajuste", precio_venta=100, stock=10, categorias=[cat], proveedor=prov)
+        session.commit()
+        resp = await client.patch(
+            f"/productos/{prod.id}",
+            json={"stock": 6},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["stock"] == 6
+        movs = await client.get(f"/stock/movimientos?producto_id={prod.id}", headers=admin_headers)
+        assert movs.status_code == 200
+        data = movs.json()
+        assert len(data) == 1
+        assert data[0]["tipo"] == "AJUSTE"
+        assert data[0]["cantidad"] == 4
+        assert data[0]["stock_anterior"] == 10
+        assert data[0]["stock_nuevo"] == 6

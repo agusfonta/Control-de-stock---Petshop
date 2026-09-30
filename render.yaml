@@ -10,4 +10,6 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: SEED_ON_START
-        value: true
+        value: "false"
+      - key: CORS_ORIGINS
+        sync: false

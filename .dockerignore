@@ -1,0 +1,27 @@
+# Git / local tooling
+.git
+.github
+.agents
+.opencode
+openspec
+
+# Local environments / secrets
+.env
+.env.*
+!.env.example
+.venv
+venv
+
+# Frontend is deployed separately on Vercel
+frontend
+
+# Tests / local artifacts
+tests
+*.db
+*.sqlite
+*.sqlite3
+*.log
+__pycache__
+.pytest_cache
+.coverage
+htmlcov

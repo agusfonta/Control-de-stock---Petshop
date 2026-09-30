@@ -15,10 +15,11 @@ import argparse
 import sys
 from datetime import datetime
 
-from app.core.database import SessionLocal, Base, engine
+from app.core.database import SessionLocal
 from app import models
 from app.core.security import hash_password
 from app.services.discounts import aplicar_descuento
+from app.core.time import utc_now
 
 DEMO_TAG = "DEMO-"
 
@@ -107,7 +108,6 @@ def main() -> int:
     ap.add_argument("--reset", action="store_true")
     args = ap.parse_args()
 
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         existe = (
@@ -278,7 +278,7 @@ def main() -> int:
                     costo_unitario=prod.precio_costo, subtotal=sub))
             comp = models.Compra(
                 proveedor_id=prov.id, nro_boleta=nro,
-                fecha_entrega=datetime.now() if entregada else None,
+                fecha_entrega=utc_now() if entregada else None,
                 pagado=pagada, medio_pago=medio, monto=monto,
                 detalles=dets)
             db.add(comp)

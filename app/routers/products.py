@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app import models, schemas
 from app.deps import require_roles
+from app.services import stock as stock_service
 
 router = APIRouter(prefix="/productos", tags=["productos"])
 leer = Depends(require_roles("admin", "vendedor"))
@@ -44,11 +45,15 @@ def crear(d: schemas.ProductoCreate, db: Session = Depends(get_db)):
     p = models.Producto(
         sku=sku, nombre=d.nombre, descripcion=d.descripcion, marca=d.marca,
         unidad=d.unidad, precio_costo=d.precio_costo, precio_venta=d.precio_venta,
-        stock=d.stock, stock_minimo=d.stock_minimo, imagen_url=d.imagen_url,
+        stock=0, stock_minimo=d.stock_minimo, imagen_url=d.imagen_url,
         activo=d.activo, categorias=cats, proveedor_id=d.proveedor_id,
         proveedores_alt=provs_alt,
     )
-    db.add(p); db.commit(); db.refresh(p)
+    db.add(p)
+    db.flush()
+    if d.stock:
+        stock_service.ajustar(db, p, d.stock)
+    db.commit(); db.refresh(p)
     return _out(p)
 
 @router.get("", response_model=list[schemas.ProductoOut], dependencies=[leer])
@@ -97,7 +102,10 @@ def obtener(pid: int, db: Session = Depends(get_db)):
 def actualizar(pid: int, d: schemas.ProductoUpdate, db: Session = Depends(get_db)):
     p = db.get(models.Producto, pid)
     if not p: raise HTTPException(404, "Producto no encontrado")
-    data = d.model_dump(exclude_unset=True, exclude={"categoria_ids", "sku", "proveedor_id", "proveedor_ids_alt"})
+    data = d.model_dump(
+        exclude_unset=True,
+        exclude={"categoria_ids", "sku", "stock", "proveedor_id", "proveedor_ids_alt"},
+    )
     for k, v in data.items():
         setattr(p, k, v)
     if "sku" in d.model_dump(exclude_unset=True):
@@ -117,6 +125,12 @@ def actualizar(pid: int, d: schemas.ProductoUpdate, db: Session = Depends(get_db
         _validar_proveedores(db, nuevo_principal, nuevos_alts or [])
         p.proveedor_id = nuevo_principal
         p.proveedores_alt = db.query(models.Proveedor).filter(models.Proveedor.id.in_(nuevos_alts)).all() if nuevos_alts else []
+    if "stock" in dump:
+        try:
+            stock_service.ajustar(db, p, dump["stock"])
+        except stock_service.StockError as e:
+            db.rollback()
+            raise HTTPException(422, str(e))
     db.commit(); db.refresh(p)
     return _out(p)
 
@@ -173,13 +187,17 @@ def importar_csv(file: UploadFile, db: Session = Depends(get_db)):
             img = (row.get("imagen_url") or "").strip() or None
             if img and not (img.startswith("http://") or img.startswith("https://")):
                 raise ValueError("imagen_url debe ser URL http(s)")
-            db.add(models.Producto(
+            p = models.Producto(
                 sku=sku, nombre=nombre, descripcion=(row.get("descripcion") or None),
                 marca=(row.get("marca") or None), unidad=unidad,
                 precio_costo=precio_costo, precio_venta=precio_venta,
-                stock=stock, stock_minimo=stock_min, imagen_url=img,
+                stock=0, stock_minimo=stock_min, imagen_url=img,
                 activo=True, categorias=cats,
-            ))
+            )
+            db.add(p)
+            db.flush()
+            if stock:
+                stock_service.ajustar(db, p, stock)
             creados += 1
         except ValueError as e:
             db.rollback()

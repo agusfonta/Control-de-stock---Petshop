@@ -2,6 +2,7 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app import models
+from app.services.money import money
 
 _SKU_COUNTER = 0
 _EMAIL_COUNTER = 0
@@ -117,7 +118,7 @@ def create_proveedor(session: Session, **overrides) -> models.Proveedor:
 def create_pedido(session: Session, cliente: models.Cliente, detalles: list, metodo_pago: models.MetodoPago = models.MetodoPago.efectivo, **overrides) -> models.Pedido:
     from app.services.discounts import aplicar_descuento
 
-    subtotal = 0.0
+    subtotal = money(0)
     detalles_db = []
     movimientos = []
 
@@ -127,9 +128,9 @@ def create_pedido(session: Session, cliente: models.Cliente, detalles: list, met
         descuento_tipo = det.get("descuento_tipo", models.TipoDescuento.ningun)
         descuento_valor = det.get("descuento_valor", 0)
 
-        base = round(producto.precio_venta * cantidad, 2)
+        base = money(producto.precio_venta * cantidad)
         sub_linea = aplicar_descuento(base, descuento_tipo.value, descuento_valor)
-        subtotal = round(subtotal + sub_linea, 2)
+        subtotal = money(subtotal + sub_linea)
 
         ant = producto.stock
         producto.stock = ant - cantidad

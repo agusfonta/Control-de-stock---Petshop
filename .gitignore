@@ -1,22 +1,40 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
-# Bases de datos locales
+# Cobertura / testing
+.coverage
+coverage.xml
+htmlcov/
+
+# Bases de datos locales y backups
 *.db
+*.db-*
 *.db.bak*
 *.bak
-*.sqlite*
+*.sqlite
 *.sqlite3
 
 # Variables de entorno
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
 dist/
 
-# OpenSpec / OpenCode
+# Logs / SO / IDE
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# OpenSpec / OpenCode (configuración local del agente)
 .agents/
 .opencode/
 openspec/

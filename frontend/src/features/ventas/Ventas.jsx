@@ -4,7 +4,7 @@ import Err from '../../components/Err';
 import Field from '../../components/Field';
 import Modal from '../../components/Modal';
 import ProdBuscador from '../../components/ProdBuscador';
-import { MEDIO_TXT, MEDIOS_SEL } from '../../constants/paymentMethods';
+import { MEDIO_TXT, MEDIO_SHORT, MEDIOS_SEL } from '../../constants/paymentMethods';
 import { errNombre, errEnteroMin, errDtoValor, isEmailOk } from '../../utils/validators';
 import { ventasState } from './ventasState';
 import { todayLocal } from '../../utils/dates';

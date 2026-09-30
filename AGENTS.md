@@ -1,44 +1,48 @@
-# Animall — Instrucciones para Agentes
+# Animall — Instrucciones para agentes
 
-> Configuración OpenCode profesional. Reglas generales y permanentes únicamente.
+## Objetivo
+Mantener y mejorar Animall sin alterar funcionalidades existentes salvo que la tarea lo pida explícitamente.
 
-## Stack Tecnológico
+## Stack
+- Backend: FastAPI + SQLAlchemy + Pydantic.
+- Frontend: React + Vite.
+- Base local: SQLite. Producción: Postgres mediante `DATABASE_URL`.
+- Tests: pytest + httpx.
 
-| Capa | Tecnología |
-|------|------------|
-| Backend | FastAPI + SQLAlchemy 2 + Pydantic 2 (SQLite/Postgres) |
-| Frontend | React 19 + Vite (App.jsx único) |
-| Tests | pytest + httpx |
-| Auth | python-jose HS256 + passlib bcrypt |
+## Reglas de negocio críticas
+- No eliminar productos que tengan historial de ventas: usar `activo=False`.
+- Una categoría eliminada no debe dejar productos huérfanos: usar `Sin categoría`.
+- Todo cambio de stock debe quedar registrado en `MovimientoStock`; un ajuste manual usa `AJUSTE`.
+- Una venta debe validar stock antes de confirmarse.
+- Cancelar una venta debe devolver el stock y registrar el movimiento correspondiente.
+- Los endpoints protegidos deben conservar su control de roles.
+- El backend es la autoridad final para validar reglas de negocio.
 
-## Reglas Duras (inmutables)
+## Reglas de implementación
+- No reescribir el proyecto completo para una tarea puntual.
+- No borrar archivos o funciones sin comprobar sus referencias y su uso.
+- No cambiar contratos de API, modelos de datos o comportamiento visible sin indicarlo antes en el plan.
+- Mantener las modificaciones pequeñas y relacionadas con la tarea.
+- Frontend: las llamadas HTTP pasan por `frontend/src/api.js`.
+- Antes de terminar una tarea, ejecutar las verificaciones que correspondan (`pytest`, `npm run lint`, `npm run build`). Si una no puede ejecutarse, informarlo claramente.
+- No hacer commits salvo pedido explícito.
 
-- **NUNCA** borrar producto con ventas → desactivar `activo=False`
-- **NUNCA** dejar producto huérfano al borrar categoría → reasignar a `Sin categoría`
-- **NUNCA** cambiar `stock` sin `MovimientoStock` (`INGRESO`, `EGRESO_VENTA`, `DEVOLUCION_CANCEL`) con `stock_anterior/nuevo`
-- **NUNCA** crear pedido sin validar stock → 422 si falta
-- **NUNCA** exponer endpoint sensible sin `require_roles()` (admin/vendedor)
-- **NUNCA** usar `SECRET_KEY` demo en producción
-- **NUNCA** saltar validación Pydantic (sku único, precio>0, descuento≤100, URLs http(s), email/dni únicos)
-- **NUNCA** llamar fetch directo en frontend → usar `api` de `frontend/src/api.js`
-- **SIEMPRE** UX/UI frontend profesional: clara, consistente, responsive, funcional, con feedback de carga/error/vacío, accesibilidad básica, respetando patrones visuales existentes, sin elementos innecesarios
+## Flujo obligatorio para tareas no triviales
+1. Revisar `AGENTS.md`, `README.md` y `ANIMALL_ESTADO.md`.
+2. Explicar brevemente qué archivos se tocarán y por qué.
+3. Implementar solo el alcance acordado.
+4. Verificar regresiones.
+5. Actualizar `ANIMALL_ESTADO.md` cuando cambie una decisión o el estado técnico.
 
-## Flujo de Trabajo
+## Estructura actual
+El proyecto todavía está en una etapa de consolidación. No asumir que toda la estructura objetivo ya existe.
+- Backend principal: `app/`
+- Routers: `app/routers/`
+- Servicios existentes: `app/services/`
+- Frontend actual: `frontend/src/`
+- Tests: `tests/`
+- Scripts auxiliares: `scripts/`
 
-1. Leer `AGENTS.md` + `README.md` antes de codear
-2. Backend: router + schema + servicio | Frontend: `api.js` + componente en `App.jsx`
-3. Verificar con `pytest` y `npm run lint` antes de afirmar
-4. Referenciar `archivo:línea` | No crear archivos si basta editar | No commitear sin pedido
-
-## Agentes OpenCode (definidos en `opencode.json`)
-
-| Agente | Rol | Permisos |
-|--------|-----|----------|
-| `orchestrator` | Coordinación, alcance, delegación | Solo lectura + Task tool |
-| `architect` | Análisis, planificación, diseño | Solo lectura |
-| `programmer` | Implementación backend/frontend | Lectura + Escritura |
-| `tester` | Verificación, tests, calidad | Lectura + Tests |
-
-## Skills del proyecto (`.opencode/skills/`)
-
-- `openspec-*` (6 skills): flujo OPSX completo (explore, propose, apply, update, sync, archive)
+## OpenCode / OpenSpec
+`.opencode/`, `.agents/` y `openspec/` son herramientas/documentación locales y no forman parte del código de producción.
+No modificar ni eliminar su contenido como parte de una tarea funcional salvo que la tarea lo pida explícitamente.

@@ -11,7 +11,9 @@ import { parseApiUtc } from '../../utils/dates';
 function Clientes() {
   const { data, err, reload } = useLoad(api.clientes);
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
+  const [f, setF] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '', mascotas: [] });
+  const MASCOTA_VACIA = { especie: 'perro', nombre: '' };
+  const setMascota = (i, patch) => setF(prev => ({ ...prev, mascotas: prev.mascotas.map((m, j) => j === i ? { ...m, ...patch } : m) }));
   const [q, setQ] = useState('');
   const [selCli, setSelCli] = useState(null);
   const [peds, setPeds] = useState([]);
@@ -46,7 +48,7 @@ function Clientes() {
         ? <p className="muted">Este cliente todavía no tiene pedidos.</p>
         : <>
           <ul>{view.map(p => <li key={p.id}>
-            <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {MEDIO_TXT[p.metodo_pago] || p.metodo_pago}
+            <b>📅 {fechaFmt(p.fecha)}</b> · pedido #{p.id} · {p.estado} · {MEDIO_TXT[p.metodo_pago] || p.metodo_pago}{p.vendedora_nombre ? ` · Vendedora: ${p.vendedora_nombre}` : ''}
             <button onClick={() => setDetId(detId === p.id ? null : p.id)}>{detId === p.id ? 'ocultar detalle' : 'ver detalle'}</button>
             {detId === p.id && (
               <div className="det">
@@ -86,12 +88,19 @@ function Clientes() {
         <Field label="DNI" hint="DNI único del cliente" error={!f.dni ? '' : f.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : ''}><input placeholder="Ej: 30123456" value={f.dni} onChange={e => setF({ ...f, dni: e.target.value })} className={f.dni && f.dni.trim().length < 7 ? 'invalid' : ''} /></Field>
         <Field label="Dirección" hint="Dirección, opcional"><input placeholder="Ej: Av Colón 1234" value={f.direccion} onChange={e => setF({ ...f, direccion: e.target.value })} /></Field>
       </div>
-      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { const hayErr = errNombre(f.nombre, 2) || (!f.email.trim() ? 'Completá el email' : !isEmailOk(f.email) ? 'Email inválido' : '') || (!f.dni.trim() ? 'Completá el DNI' : f.dni.trim().length < 7 ? 'DNI mínimo 7' : ''); if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; } try { await api.createCliente(f); setF({ nombre: '', email: '', telefono: '', dni: '', direccion: '' }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
+      <h3>Mascotas <span className="muted small">(opcional)</span></h3>
+      {f.mascotas.map((m, i) => <div className="line" key={i}>
+        <Field className="lc" label="Tipo"><select value={m.especie} onChange={e => setMascota(i, { especie: e.target.value })}><option value="perro">Perro</option><option value="gato">Gato</option></select></Field>
+        <Field className="lp" label="Nombre"><input value={m.nombre} onChange={e => setMascota(i, { nombre: e.target.value })} placeholder="Luna" /></Field>
+        <button className="ghost" onClick={() => setF(prev => ({ ...prev, mascotas: prev.mascotas.filter((_, j) => j !== i) }))}>-</button>
+      </div>)}
+      <button className="ghost" onClick={() => setF(prev => ({ ...prev, mascotas: [...prev.mascotas, { ...MASCOTA_VACIA }] }))}>+ Agregar mascota</button>
+      <div className="modal-actions"><button className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button onClick={async () => { const hayErr = errNombre(f.nombre, 2) || (!f.email.trim() ? 'Completá el email' : !isEmailOk(f.email) ? 'Email inválido' : '') || (!f.dni.trim() ? 'Completá el DNI' : f.dni.trim().length < 7 ? 'DNI mínimo 7' : ''); if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; } try { await api.createCliente({ ...f, mascotas: f.mascotas.map(m => ({ especie: m.especie, nombre: m.nombre.trim() })) }); setF({ nombre: '', email: '', telefono: '', dni: '', direccion: '', mascotas: [] }); setOpen(false); reload(); } catch (e) { alert(e.message); } }}>Guardar</button></div>
     </Modal>
-    <div className="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>DNI</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
+    <div className="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>DNI</th><th>Mascotas</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
       {rows.map(c => <tbody key={c.id}>
         <tr>
-          <td>{c.nombre}</td><td>{c.email}</td><td>{c.dni}</td>
+          <td>{c.nombre}</td><td>{c.email}</td><td>{c.dni}</td><td>{(c.mascotas || []).length ? c.mascotas.map(m => `${m.especie} · ${m.nombre}`).join(', ') : '-'}</td>
           <td>{c.telefono || '-'}</td><td>{c.direccion || '-'}</td>
           <td><button onClick={() => verPeds(c)}>ver pedidos</button></td>
         </tr>

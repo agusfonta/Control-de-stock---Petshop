@@ -6,6 +6,8 @@ from app.deps import require_roles
 from app.services import purchases as purchase_service
 from app.core.time import local_day_bounds_utc
 from app.services.money import money
+from app.core.time import utc_now
+from datetime import timedelta
 
 router = APIRouter(prefix="/compras", tags=["compras"])
 leer = Depends(require_roles("admin", "vendedor"))
@@ -29,6 +31,30 @@ def _out(c: models.Compra, nombres: dict[int, str] | None = None) -> schemas.Com
         od.producto_nombre = (nombres or {}).get(d.producto_id, "")
         det_out.append(od)
     o.detalles = det_out
+    pagos = []
+    total_pagado = money(0)
+    total_desc = money(0)
+    for p in (c.pagos or []):
+        total_aplicado = money(p.monto + p.descuento)
+        po = schemas.PagoCompraOut.model_validate(p)
+        po.total_aplicado = float(total_aplicado)
+        pagos.append(po)
+        total_pagado = money(total_pagado + p.monto)
+        total_desc = money(total_desc + p.descuento)
+    if not pagos and c.pagado and c.medio_pago:
+        pagos = [schemas.PagoCompraOut(id=0, fecha=None, medio=c.medio_pago, monto=float(c.monto), descuento=0, total_aplicado=float(c.monto), legado=True)]
+        total_pagado = money(c.monto)
+    o.pagos = pagos
+    o.total_pagado = float(total_pagado)
+    o.total_descuentos = float(total_desc)
+    saldo_pendiente = money(0) if c.pagado and not c.pagos else money(max(money(0), c.monto - sum((p.monto + p.descuento for p in (c.pagos or [])), money(0))))
+    o.saldo_pendiente = float(saldo_pendiente)
+    dias = getattr(c.proveedor, "pronto_pago_dias", None)
+    porcentaje = getattr(c.proveedor, "pronto_pago_porcentaje", None)
+    if dias is not None and porcentaje is not None and porcentaje > 0:
+        limite = c.fecha_pedido.date() + timedelta(days=dias)
+        if utc_now().date() <= limite and saldo_pendiente > 0:
+            o.sugerencia_pronto_pago = float(money(saldo_pendiente * money(porcentaje) / money(100)))
     return o
 
 
@@ -43,7 +69,8 @@ def _nombres(db: Session, compras: list[models.Compra]) -> dict[int, str]:
 def _q_base(db: Session):
     return db.query(models.Compra).options(
         joinedload(models.Compra.proveedor),
-        joinedload(models.Compra.detalles))
+        joinedload(models.Compra.detalles),
+        joinedload(models.Compra.pagos))
 
 
 @router.post("", response_model=schemas.CompraOut, status_code=201, dependencies=[leer])
@@ -84,13 +111,21 @@ def deudas(db: Session = Depends(get_db)):
     """Deuda actual por distribuidora = suma de compras impagas."""
     res = []
     for pr in db.query(models.Proveedor).order_by(models.Proveedor.nombre).all():
-        impagas = db.query(models.Compra).filter(
-            models.Compra.proveedor_id == pr.id,
-            models.Compra.pagado == False).all()  # noqa
+        compras = db.query(models.Compra).filter(models.Compra.proveedor_id == pr.id).all()
+        deuda = money(0)
+        pendientes = 0
+        for c in compras:
+            aplicado = money(sum((p.monto + p.descuento for p in (c.pagos or [])), money(0)))
+            saldo = money(0) if c.pagado and not c.pagos else money(max(money(0), c.monto - aplicado))
+            if saldo > 0:
+                deuda = money(deuda + saldo)
+                pendientes += 1
         res.append({"id": pr.id, "nombre": pr.nombre, "alias": pr.alias,
                     "dias_entrega": pr.dias_entrega,
-                    "deuda": money(sum((c.monto for c in impagas), money(0))),
-                    "pendientes": len(impagas)})
+                    "deuda": deuda,
+                    "pendientes": pendientes,
+                    "pronto_pago_dias": pr.pronto_pago_dias,
+                    "pronto_pago_porcentaje": pr.pronto_pago_porcentaje})
     return res
 
 
@@ -125,9 +160,9 @@ def entregar(cid: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{cid}/pagar", response_model=schemas.CompraOut, dependencies=[leer])
-def pagar(cid: int, d: dict, db: Session = Depends(get_db)):
+def pagar(cid: int, d: schemas.PagoCompraIn, db: Session = Depends(get_db)):
     try:
-        compra = purchase_service.pagar_compra(db, cid, d)
+        compra = purchase_service.pagar_compra(db, cid, d.model_dump())
     except purchase_service.PurchaseError as e:
         db.rollback()
         raise HTTPException(e.status_code, e.detail)

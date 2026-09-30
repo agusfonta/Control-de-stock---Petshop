@@ -16,8 +16,12 @@ function Productos({ isAdmin }) {
   const [open, setOpen] = useState(false);
   const [editProd, setEditProd] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const [margen, setMargen] = useState(0);
+  const [marginOpen, setMarginOpen] = useState(false);
+  const [marginForm, setMarginForm] = useState('0');
   const precioEfForm = Number(form.precio_venta) > 0 ? (Number(form.precio_venta) * 0.9).toFixed(2) : '—';
   const precioEfEdit = Number(editForm.precio_venta) > 0 ? (Number(editForm.precio_venta) * 0.9).toFixed(2) : '—';
+  const calc = (costo) => Math.round(((Number(costo) || 0) * (1 + (Number(margen) || 0) / 100)) * 100) / 100;
 
   const openEdit = (p) => {
     setEditProd(p);
@@ -38,6 +42,7 @@ function Productos({ isAdmin }) {
       await api.patchProd(editProd.id, payload); setEditProd(null); load();
     } catch (e) { alert(e.message); }
   };
+  const saveMargin = async () => { const v = Number(marginForm); if (!Number.isFinite(v) || v < 0 || v > 1000) { alert('Margen entre 0 y 1000%'); return; } try { await api.actualizarConfiguracionPrecios({ margen_venta_porcentaje: v }); setMargen(v); setMarginOpen(false); setForm(prev => ({ ...prev, precio_venta: calc(prev.precio_costo) })); } catch (e) { alert(e.message); } };
   const eliminarProd = async () => {
     if (!confirm(`Eliminar "${editProd.nombre}"? Solo es posible si no tiene ventas.`)) return;
     try { await api.deleteProd(editProd.id); setEditProd(null); load(); }
@@ -51,7 +56,7 @@ function Productos({ isAdmin }) {
     try { setItems(await api.prods({ search: search || undefined, categoria: cat || undefined, proveedor: prov || undefined, stock_bajo: bajo || undefined, solo_activos: true })); }
     catch (e) { setErr(e.message); }
   };
-  useEffect(() => { loadCats(); loadProvs(); }, []);
+  useEffect(() => { loadCats(); loadProvs(); (async () => { try { const c = await api.configuracionPrecios(); setMargen(Number(c.margen_venta_porcentaje) || 0); setMarginForm(String(c.margen_venta_porcentaje ?? 0)); } catch (e) { setErr(e.message); } })(); }, []);
   // Filtro automático (con debounce para el buscador)
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -67,12 +72,13 @@ function Productos({ isAdmin }) {
     const hayErr = errNombre(form.nombre, 2) || errMayor0(form.precio_venta, 'Debe ser mayor a 0') || errMayorIgual0(form.precio_costo) || errEnteroMin(form.stock_minimo, 0);
     if (hayErr) { alert(`Corregí lo marcado en rojo: ${hayErr}`); return; }
     try {
-      const payload = { ...form, precio_costo: +form.precio_costo, precio_venta: +form.precio_venta, stock: 0, stock_minimo: +form.stock_minimo, sku: form.sku || null, imagen_url: null, categoria_ids: form.categoria_ids.map(Number), proveedor_id: form.proveedor_id ? +form.proveedor_id : null, proveedor_ids_alt: (form.proveedor_ids_alt || []).map(Number) };
+      const precioVenta = Number(form.precio_venta) > 0 ? +form.precio_venta : calc(form.precio_costo);
+      const payload = { ...form, precio_costo: +form.precio_costo, precio_venta: precioVenta, stock: 0, stock_minimo: +form.stock_minimo, sku: form.sku || null, imagen_url: null, categoria_ids: form.categoria_ids.map(Number), proveedor_id: form.proveedor_id ? +form.proveedor_id : null, proveedor_ids_alt: (form.proveedor_ids_alt || []).map(Number) };
       await api.createProd(payload); setOpen(false); load();
     } catch (e) { alert(e.message); }
   };
   return <section>
-    <div className="sec-head"><h2>Stock</h2><button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
+    <div className="sec-head"><h2>Stock</h2>{isAdmin && <button className="ghost" onClick={() => setMarginOpen(true)}>⚙ Margen {margen}%</button>}<button className="fab" onClick={() => setOpen(true)}>+ Nuevo</button></div>
     <Err e={err} />
     <div className="row">
       <input placeholder="Buscar nombre/marca" value={search} onChange={e => setSearch(e.target.value)} />
@@ -88,6 +94,11 @@ function Productos({ isAdmin }) {
         <td>{p.stock === 0 ? <span className="badge out">Sin stock</span> : <span className="badge ok">Disponible</span>}</td>
         <td><button onClick={() => openEdit(p)}>editar</button></td></tr>)}
       </tbody></table></div>
+    <Modal open={marginOpen} onClose={() => setMarginOpen(false)} title="Margen de precio venta">
+      <p className="muted small">Se aplica sobre el precio costo: precio venta = costo + porcentaje. No cambia automáticamente productos existentes.</p>
+      <Field label="Recargo sobre costo (%)"><input type="number" min="0" max="1000" step="0.01" value={marginForm} onChange={e => setMarginForm(e.target.value)} /></Field>
+      <div className="modal-actions"><button className="ghost" onClick={() => setMarginOpen(false)}>Cancelar</button><button onClick={saveMargin}>Guardar</button></div>
+    </Modal>
     <Modal open={catOpen} onClose={() => setCatOpen(false)} title="Nueva categoría">
       <Field label="Nombre" error={catNombre ? errNombre(catNombre, 2) : ''}>
         <input placeholder="Nombre" value={catNombre} onChange={e => setCatNombre(e.target.value)} className={catNombre && errNombre(catNombre, 2) ? 'invalid' : ''} />
@@ -102,9 +113,9 @@ function Productos({ isAdmin }) {
         <Field label="Nombre*" hint="Nombre visible en listados y ventas" error={errNombre(form.nombre, 2)}><input placeholder="Ej: Royal Canin Mini 3kg" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className={errNombre(form.nombre, 2) ? 'invalid' : ''} /></Field>
         <Field label="Marca" hint="Marca o laboratorio"><input placeholder="Ej: Royal Canin" value={form.marca} onChange={e => setForm({ ...form, marca: e.target.value })} /></Field>
         <Field label="Unidad" hint="Cómo se vende y descuenta el stock"><select value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
-        <Field label="Precio al costo" hint="Precio de compra, solo referencia interna" error={errMayorIgual0(form.precio_costo)}><input type="number" placeholder="0" value={form.precio_costo} onChange={e => setForm({ ...form, precio_costo: e.target.value })} className={errMayorIgual0(form.precio_costo) ? 'invalid' : ''} /></Field>
-        <Field label="Precio venta*" hint="Precio al público que se cobra" error={errMayor0(form.precio_venta, 'Debe ser mayor a 0')}><input type="number" placeholder="100" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} className={errMayor0(form.precio_venta) ? 'invalid' : ''} /></Field>
-        <Field label="Precio efect/transf" hint="Venta con 10% off"><input value={precioEfForm === '—' ? '' : `$${precioEfForm}`} disabled readOnly placeholder="—" /></Field>
+        <Field label="Precio al costo" hint="Precio de compra; calcula el precio de venta" error={errMayorIgual0(form.precio_costo)}><input type="number" placeholder="0" value={form.precio_costo} onChange={e => { const v = e.target.value; setForm({ ...form, precio_costo: v, precio_venta: calc(v) }); }} className={errMayorIgual0(form.precio_costo) ? 'invalid' : ''} /></Field>
+        <Field label="Precio venta*" hint={`Precio al público · margen ${margen}%`} error={errMayor0(form.precio_venta, 'Debe ser mayor a 0')}><input type="number" placeholder="100" value={form.precio_venta} onChange={e => setForm({ ...form, precio_venta: e.target.value })} className={errMayor0(form.precio_venta) ? 'invalid' : ''} /></Field>
+        <Field label="Precio efectivo/QR" hint="Venta con 10% off"><input value={precioEfForm === '—' ? '' : `$${precioEfForm}`} disabled readOnly placeholder="—" /></Field>
         <Field label="Mín" hint="Avisa stock bajo al llegar a este nivel" error={errEnteroMin(form.stock_minimo, 0)}><input type="number" placeholder="10" value={form.stock_minimo} onChange={e => setForm({ ...form, stock_minimo: e.target.value })} className={errEnteroMin(form.stock_minimo, 0) ? 'invalid' : ''} /></Field>
         <Field label="Descripción" hint="Detalle largo del producto"><input placeholder="Ej: Alimento para perro adulto" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></Field>
       </div>
@@ -124,12 +135,13 @@ function Productos({ isAdmin }) {
         <Field label="Nombre" error={errNombre(editForm.nombre || '', 2)}><input placeholder="Ej: Royal Canin Mini 3kg" value={editForm.nombre || ''} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} className={errNombre(editForm.nombre || '', 2) ? 'invalid' : ''} /></Field>
         <Field label="Marca"><input placeholder="Ej: Royal Canin" value={editForm.marca || ''} onChange={e => setEditForm({ ...editForm, marca: e.target.value })} /></Field>
         <Field label="Unidad"><select value={editForm.unidad || 'unidad'} onChange={e => setEditForm({ ...editForm, unidad: e.target.value })}><option>unidad</option><option>kg</option><option>lt</option><option>pack</option></select></Field>
-        <Field label="Precio al costo" hint="Precio de compra" error={errMayorIgual0(editForm.precio_costo ?? 0)}><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => setEditForm({ ...editForm, precio_costo: e.target.value })} className={errMayorIgual0(editForm.precio_costo ?? 0) ? 'invalid' : ''} /></Field>
+        <Field label="Precio al costo" hint="Precio de compra; recalcula el precio de venta" error={errMayorIgual0(editForm.precio_costo ?? 0)}><input type="number" placeholder="0" value={editForm.precio_costo ?? 0} onChange={e => { const v = e.target.value; setEditForm({ ...editForm, precio_costo: v, precio_venta: calc(v) }); }} className={errMayorIgual0(editForm.precio_costo ?? 0) ? 'invalid' : ''} /></Field>
         <Field label="Precio venta" hint="Precio al público" error={errMayor0(editForm.precio_venta ?? 0, 'Debe ser mayor a 0')}><input type="number" placeholder="0" value={editForm.precio_venta ?? 0} onChange={e => setEditForm({ ...editForm, precio_venta: e.target.value })} className={errMayor0(editForm.precio_venta ?? 0) ? 'invalid' : ''} /></Field>
-        <Field label="Precio efect/transf" hint="Venta con 10% off"><input value={precioEfEdit === '—' ? '' : `$${precioEfEdit}`} disabled readOnly placeholder="—" /></Field>
+        <Field label="Precio efectivo/QR" hint="Venta con 10% off"><input value={precioEfEdit === '—' ? '' : `$${precioEfEdit}`} disabled readOnly placeholder="—" /></Field>
         <Field label="Mín" hint="Avisa stock bajo al llegar a este minimo" error={errEnteroMin(editForm.stock_minimo ?? 10, 0)}><input type="number" placeholder="10" value={editForm.stock_minimo ?? 10} onChange={e => setEditForm({ ...editForm, stock_minimo: e.target.value })} className={errEnteroMin(editForm.stock_minimo ?? 10, 0) ? 'invalid' : ''} /></Field>
         <Field label="Descripción"><input placeholder="Ej: Alimento para perro adulto" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></Field>
       </div>
+      <button className="ghost" onClick={() => setEditForm({ ...editForm, precio_venta: calc(editForm.precio_costo) })}>Recalcular precio venta con {margen}%</button>
       <p>Categorías: {allCats.map(c => <label key={c.id}><input type="checkbox" checked={(editForm.categoria_ids || []).includes(c.id)} onChange={e => setEditForm({ ...editForm, categoria_ids: e.target.checked ? [...(editForm.categoria_ids || []), c.id] : (editForm.categoria_ids || []).filter(x => x !== c.id) })} />{c.nombre}</label>)}</p>
       <Field label="Distribuidora principal" hint="Distribuidora habitual, opcional">
         <select value={editForm.proveedor_id || ''} onChange={e => { const v = e.target.value; setEditForm({ ...editForm, proveedor_id: v, proveedor_ids_alt: v ? Array.from(new Set([...(editForm.proveedor_ids_alt || []), +v])) : editForm.proveedor_ids_alt }); }}>

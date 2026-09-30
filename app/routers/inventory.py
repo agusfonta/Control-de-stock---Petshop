@@ -53,17 +53,23 @@ def movimientos(
 
 prov = APIRouter(prefix="/proveedores", tags=["proveedores"])
 
+def _proveedor_out(pr: models.Proveedor) -> schemas.ProveedorOut:
+    o = schemas.ProveedorOut.model_validate(pr)
+    o.pronto_pago_porcentaje = float(pr.pronto_pago_porcentaje) if pr.pronto_pago_porcentaje is not None else None
+    return o
+
+
 @prov.post("", response_model=schemas.ProveedorOut, status_code=201, dependencies=[leer])
 def crear_prov(d: schemas.ProveedorCreate, db: Session = Depends(get_db)):
     if db.query(models.Proveedor).filter(models.Proveedor.nombre == d.nombre).first():
         raise HTTPException(400, "Proveedor ya existe")
     pr = models.Proveedor(**d.model_dump())
     db.add(pr); db.commit(); db.refresh(pr)
-    return pr
+    return _proveedor_out(pr)
 
 @prov.get("", response_model=list[schemas.ProveedorOut], dependencies=[leer])
 def listar_prov(db: Session = Depends(get_db)):
-    return db.query(models.Proveedor).all()
+    return [_proveedor_out(pr) for pr in db.query(models.Proveedor).all()]
 
 
 SIGNO_DEUDA = {
@@ -86,6 +92,22 @@ def _con_saldo(movs: list[models.MovimientoProveedor]) -> list[schemas.Movimient
         out.append(o)
     return out
 
+
+
+@prov.patch("/{pid}", response_model=schemas.ProveedorOut, dependencies=[leer])
+def actualizar_prov(pid: int, d: schemas.ProveedorUpdate, db: Session = Depends(get_db)):
+    pr = db.get(models.Proveedor, pid)
+    if not pr:
+        raise HTTPException(404, "Proveedor no encontrado")
+    data = d.model_dump(exclude_unset=True)
+    if "nombre" in data:
+        existe = db.query(models.Proveedor).filter(models.Proveedor.nombre == data["nombre"], models.Proveedor.id != pid).first()
+        if existe:
+            raise HTTPException(400, "Proveedor ya existe")
+    for k, v in data.items():
+        setattr(pr, k, v)
+    db.commit(); db.refresh(pr)
+    return _proveedor_out(pr)
 
 @prov.get("/saldos", dependencies=[leer])
 def saldos_prov(db: Session = Depends(get_db)):
@@ -123,7 +145,7 @@ def crear_mov_prov(pid: int, d: schemas.MovimientoProveedorCreate, db: Session =
                   models.TipoMovProveedor.PAGO_TRANSFER_003):
         medio = (models.MetodoPago.efectivo
                  if d.tipo == models.TipoMovProveedor.PAGO_EFECTIVO_002
-                 else models.MetodoPago.transferencia)
+                 else models.MetodoPago.qr)
         cash_service.registrar(
             db,
             tipo=models.TipoMovCaja.SALIDA,

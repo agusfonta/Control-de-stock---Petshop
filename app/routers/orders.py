@@ -17,7 +17,8 @@ def _parse_fecha(s: str) -> date:
         raise HTTPException(422, f"Fecha inválida '{s}': usar formato YYYY-MM-DD")
 
 def _preparar_respuesta(ped: models.Pedido) -> models.Pedido:
-    """Completa pagos/es_mixto para serializar; ventas pre-migración usan fallback legacy."""
+    """Completa pagos/es_mixto/vendedora para serializar; ventas pre-migración usan fallback legacy."""
+    ped.vendedora_nombre = ped.vendedora.username if ped.vendedora else None
     reales = list(ped.pagos) if ped.pagos else []
     if not reales:
         ped.pagos = [models.PagoPedido(id=0, pedido_id=ped.id, metodo=ped.metodo_pago, monto=ped.total)]
@@ -27,9 +28,9 @@ def _preparar_respuesta(ped: models.Pedido) -> models.Pedido:
     return ped
 
 @router.post("", response_model=schemas.PedidoOut, status_code=201, dependencies=[leer])
-def crear(d: schemas.PedidoCreate, db: Session = Depends(get_db)):
+def crear(d: schemas.PedidoCreate, db: Session = Depends(get_db), vendedor: models.User = Depends(require_roles("admin", "vendedor"))):
     try:
-        ped = sales_service.crear_venta(db, d)
+        ped = sales_service.crear_venta(db, d, vendedor)
     except sales_service.SalesError as e:
         db.rollback()
         raise HTTPException(e.status_code, e.detail)
@@ -37,7 +38,7 @@ def crear(d: schemas.PedidoCreate, db: Session = Depends(get_db)):
 
 @router.get("", response_model=list[schemas.PedidoOut], dependencies=[leer])
 def listar(fecha: str | None = None, desde: str | None = None, hasta: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(models.Pedido).options(joinedload(models.Pedido.detalles), joinedload(models.Pedido.pagos))
+    q = db.query(models.Pedido).options(joinedload(models.Pedido.detalles), joinedload(models.Pedido.pagos), joinedload(models.Pedido.vendedora))
     if fecha:
         ini, fin = local_day_bounds_utc(_parse_fecha(fecha))
         q = q.filter(models.Pedido.fecha >= ini, models.Pedido.fecha < fin)
@@ -50,7 +51,7 @@ def listar(fecha: str | None = None, desde: str | None = None, hasta: str | None
 
 @router.get("/{pid}", response_model=schemas.PedidoOut, dependencies=[leer])
 def obtener(pid: int, db: Session = Depends(get_db)):
-    p = db.query(models.Pedido).options(joinedload(models.Pedido.detalles), joinedload(models.Pedido.pagos)).filter(models.Pedido.id == pid).first()
+    p = db.query(models.Pedido).options(joinedload(models.Pedido.detalles), joinedload(models.Pedido.pagos), joinedload(models.Pedido.vendedora)).filter(models.Pedido.id == pid).first()
     if not p: raise HTTPException(404, "Pedido no encontrado")
     return _preparar_respuesta(p)
 

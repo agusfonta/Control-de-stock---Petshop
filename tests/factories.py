@@ -265,6 +265,7 @@ def create_movimiento_caja(session: Session, tipo: models.TipoMovCaja, medio: mo
         medio=medio,
         descripcion=descripcion,
         monto=monto,
+        fecha=overrides.pop("fecha", datetime.utcnow()),
         pedido_id=overrides.pop("pedido_id", None),
         compra_id=overrides.pop("compra_id", None),
     )

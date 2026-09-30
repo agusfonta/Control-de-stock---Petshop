@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app import models, schemas
 from app.deps import require_roles
 from app.services import stock as stock_service
+from app.services.money import money
 
 router = APIRouter(prefix="/productos", tags=["productos"])
 leer = Depends(require_roles("admin", "vendedor"))
@@ -32,6 +33,13 @@ def _norm_sku(sku: str | None) -> str | None:
     s = (sku or "").strip()
     return s or None
 
+def _margen_venta(db: Session):
+    c = db.get(models.Configuracion, 1)
+    return money(c.margen_venta_porcentaje if c else 0)
+
+def _precio_venta_desde_costo(db: Session, costo):
+    return money(money(costo) * (money(100) + _margen_venta(db)) / money(100))
+
 @router.post("", response_model=schemas.ProductoOut, status_code=201, dependencies=[leer])
 def crear(d: schemas.ProductoCreate, db: Session = Depends(get_db)):
     sku = _norm_sku(d.sku)
@@ -44,7 +52,8 @@ def crear(d: schemas.ProductoCreate, db: Session = Depends(get_db)):
     provs_alt = db.query(models.Proveedor).filter(models.Proveedor.id.in_(d.proveedor_ids_alt)).all() if d.proveedor_ids_alt else []
     p = models.Producto(
         sku=sku, nombre=d.nombre, descripcion=d.descripcion, marca=d.marca,
-        unidad=d.unidad, precio_costo=d.precio_costo, precio_venta=d.precio_venta,
+        unidad=d.unidad, precio_costo=d.precio_costo,
+        precio_venta=d.precio_venta if d.precio_venta is not None else _precio_venta_desde_costo(db, d.precio_costo),
         stock=0, stock_minimo=d.stock_minimo, imagen_url=d.imagen_url,
         activo=d.activo, categorias=cats, proveedor_id=d.proveedor_id,
         proveedores_alt=provs_alt,
@@ -102,10 +111,10 @@ def obtener(pid: int, db: Session = Depends(get_db)):
 def actualizar(pid: int, d: schemas.ProductoUpdate, db: Session = Depends(get_db)):
     p = db.get(models.Producto, pid)
     if not p: raise HTTPException(404, "Producto no encontrado")
-    data = d.model_dump(
-        exclude_unset=True,
-        exclude={"categoria_ids", "sku", "stock", "proveedor_id", "proveedor_ids_alt"},
-    )
+    dump_all = d.model_dump(exclude_unset=True)
+    data = {k: v for k, v in dump_all.items() if k not in {"categoria_ids", "sku", "stock", "proveedor_id", "proveedor_ids_alt"}}
+    if "precio_costo" in data and "precio_venta" not in data:
+        data["precio_venta"] = _precio_venta_desde_costo(db, data["precio_costo"])
     for k, v in data.items():
         setattr(p, k, v)
     if "sku" in d.model_dump(exclude_unset=True):

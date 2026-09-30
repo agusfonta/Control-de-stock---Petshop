@@ -76,8 +76,11 @@ export const api = {
     return req(`/stock/movimientos${s ? `?${s}` : ''}`);
   },
   reporte: (fecha) => req(`/reportes/ventas${fecha ? `?fecha=${fecha}` : ''}`),
+  configuracionPrecios: () => req('/configuracion/precios'),
+  actualizarConfiguracionPrecios: (d) => req('/configuracion/precios', { method: 'PATCH', body: JSON.stringify(d) }),
   proveedores: () => req('/proveedores'),
   createProv: (d) => req('/proveedores', { method: 'POST', body: JSON.stringify(d) }),
+  patchProv: (id, d) => req(`/proveedores/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
   saldosProv: () => req('/proveedores/saldos'),
   provMovs: (id) => req(`/proveedores/${id}/movimientos`),
   createProvMov: (id, d) => req(`/proveedores/${id}/movimientos`, { method: 'POST', body: JSON.stringify(d) }),
@@ -97,6 +100,7 @@ export const api = {
   deleteCompra: (id) => req(`/compras/${id}`, { method: 'DELETE' }),
   deudasProv: () => req('/compras/deudas'),
   caja: (fecha) => req(`/caja${fecha ? `?fecha=${fecha}` : ''}`),
+  cajaMensual: (mes) => req(`/caja/mensual${mes ? `?mes=${mes}` : ''}`),
   createCajaMov: (d) => req('/caja', { method: 'POST', body: JSON.stringify(d) }),
   deleteCajaMov: (id) => req(`/caja/${id}`, { method: 'DELETE' }),
 };

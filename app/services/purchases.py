@@ -1,6 +1,7 @@
 """Casos de uso de compras a proveedores."""
 
 from sqlalchemy.orm import Session
+from datetime import timedelta
 
 from app import models, schemas
 from app.services import stock as stock_service
@@ -94,6 +95,8 @@ def actualizar_compra(
     if data.detalles is not None:
         if compra.fecha_entrega is not None:
             raise PurchaseError(400, "Ya entregada: las líneas no se pueden editar")
+        if compra.pagos:
+            raise PurchaseError(400, "Con pagos registrados no se pueden cambiar las líneas")
         for old in list(compra.detalles):
             db.delete(old)
         db.flush()
@@ -132,36 +135,81 @@ def entregar_compra(db: Session, compra_id: int) -> models.Compra:
     return compra
 
 
+def _saldo_pendiente(compra: models.Compra) -> object:
+    total_aplicado = money(sum((p.monto + p.descuento for p in (compra.pagos or [])), money(0)))
+    if compra.pagado and not compra.pagos:
+        return money(0)
+    return money(max(money(0), compra.monto - total_aplicado))
+
+
+def sugerir_descuento_pronto_pago(compra: models.Compra) -> object:
+    proveedor = compra.proveedor
+    dias = getattr(proveedor, "pronto_pago_dias", None)
+    porcentaje = getattr(proveedor, "pronto_pago_porcentaje", None)
+    if dias is None or porcentaje is None or porcentaje <= 0:
+        return money(0)
+    hoy = utc_now()
+    if hoy.date() > (compra.fecha_pedido.date() + timedelta(days=dias)):
+        return money(0)
+    saldo = _saldo_pendiente(compra)
+    return money(saldo * money(porcentaje) / money(100))
+
+
 def pagar_compra(db: Session, compra_id: int, data: dict) -> models.Compra:
     compra = db.get(models.Compra, compra_id)
     if not compra:
         raise PurchaseError(404, "Compra no encontrada")
-    if compra.pagado:
+
+    saldo = _saldo_pendiente(compra)
+    if compra.pagado and not compra.pagos:
         raise PurchaseError(400, "Ya estaba pagada")
+    if saldo <= 0:
+        raise PurchaseError(400, "La compra ya está saldada")
 
     medio = (data or {}).get("medio_pago") or (
         compra.medio_pago.value if compra.medio_pago else None
     )
     if not medio:
-        raise PurchaseError(422, "Indicar medio_pago para pagar")
+        raise PurchaseError(422, "Indicar medio_pago para registrar el pago")
     try:
         medio_enum = models.MetodoPago(medio)
     except ValueError:
         raise PurchaseError(422, f"medio_pago inválido: {medio}")
 
-    compra.pagado = True
-    compra.medio_pago = medio_enum
-    cash_service.registrar(
-        db,
-        tipo=models.TipoMovCaja.SALIDA,
-        medio=medio_enum,
-        descripcion=f"Pago {compra.proveedor.nombre} {compra.nro_boleta}",
-        monto=compra.monto,
+    raw_monto = (data or {}).get("monto")
+    monto = money(saldo if raw_monto is None else raw_monto)
+    descuento = money((data or {}).get("descuento", 0))
+    aplicado = money(monto + descuento)
+    if aplicado <= 0:
+        raise PurchaseError(422, "El pago o descuento debe ser mayor a 0")
+    if aplicado > saldo + money("0.01"):
+        raise PurchaseError(422, f"El pago supera el saldo pendiente ${saldo:.2f}")
+
+    pago = models.PagoCompra(
         compra_id=compra.id,
+        fecha=utc_now(),
+        medio=medio_enum,
+        monto=monto,
+        descuento=descuento,
     )
+    db.add(pago)
+    db.flush()
+
+    compra.medio_pago = medio_enum
+    nuevo_saldo = money(saldo - aplicado)
+    compra.pagado = nuevo_saldo <= money("0.01")
+
+    if monto > 0:
+        cash_service.registrar(
+            db,
+            tipo=models.TipoMovCaja.SALIDA,
+            medio=medio_enum,
+            descripcion=f"Pago {compra.proveedor.nombre} {compra.nro_boleta}",
+            monto=monto,
+            compra_id=compra.id,
+        )
     db.commit()
     return compra
-
 
 def eliminar_compra(db: Session, compra_id: int) -> None:
     compra = db.get(models.Compra, compra_id)
@@ -171,6 +219,8 @@ def eliminar_compra(db: Session, compra_id: int) -> None:
         raise PurchaseError(400, "Ya entregada: no se puede borrar")
     if compra.pagado:
         raise PurchaseError(400, "Ya pagada: no se puede borrar")
+    if compra.pagos:
+        raise PurchaseError(400, "Con pagos registrados no se puede borrar")
     db.query(models.MovimientoCaja).filter(
         models.MovimientoCaja.compra_id == compra_id
     ).delete()

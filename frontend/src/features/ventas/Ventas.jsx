@@ -59,7 +59,7 @@ function Ventas() {
 
   // Modal nuevo cliente
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
-  const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
+  const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', email: '', telefono: '', dni: '', direccion: '', mascotas: [] });
   const [nuevoClienteErr, setNuevoClienteErr] = useState('');
 
   const norm = s => (s || '').toLowerCase();
@@ -116,14 +116,14 @@ function Ventas() {
     const eD = !nuevoClienteForm.dni.trim() ? 'Completá este campo' : nuevoClienteForm.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : '';
     if (eN || eE || eD) { setNuevoClienteErr(`Corregí lo marcado en rojo: ${eN || eE || eD}`); return; }
     try {
-      const nuevo = await api.createCliente(nuevoClienteForm);
+      const nuevo = await api.createCliente({ ...nuevoClienteForm, mascotas: (nuevoClienteForm.mascotas || []).filter(m => m.nombre.trim()) });
       const lista = await api.clientes();
       setClientes(lista);
       setFP(prev => ({ ...prev, cliente_id: nuevo.id }));
       setClienteQueryP(nuevo.nombre);
       setShowNuevoCliente(false);
       setClienteOpen(false);
-      setNuevoClienteForm({ nombre: '', email: '', telefono: '', dni: '', direccion: '' });
+      setNuevoClienteForm({ nombre: '', email: '', telefono: '', dni: '', direccion: '', mascotas: [] });
     } catch (e) { setNuevoClienteErr(e.message); }
   };
 
@@ -166,7 +166,6 @@ function Ventas() {
             )}
           </div>
         </Field>
-        <Field label="Método de pago"><select value={f.metodo_pago} onChange={e => { const v = e.target.value; setFP(prev => (['efectivo', 'transferencia'].includes(v) && prev.descuento_tipo === 'ningun' ? { ...prev, metodo_pago: v, descuento_tipo: 'porcentaje', descuento_valor: 10 } : { ...prev, metodo_pago: v })); setPagosP(prev => (prev.length === 1 ? [{ ...prev[0], metodo: v }] : prev)); }}>{MEDIOS_SEL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></Field>
         <Field label="Descuento del pedido"><select value={f.descuento_tipo} onChange={e => setFP({ ...f, descuento_tipo: e.target.value })}><option value="ningun">sin dto</option><option value="porcentaje">% pedido</option><option value="monto_fijo">$ pedido</option></select></Field>
         <Field label="Valor del descuento" hint="Si no hay dto, 0" error={eDtoPedido}><input type="number" value={f.descuento_valor} onChange={e => setFP({ ...f, descuento_valor: e.target.value })} className={eDtoPedido ? 'invalid' : ''} /></Field>
       </div>
@@ -218,7 +217,7 @@ function Ventas() {
             <b>#{p.id} · {cliNombre(p.cliente_id)}</b>
             <b className="in">{fmt(p.total)}</b>
           </div>
-          <div className="muted small ped-meta">{pagoTxt(p)} · {dets.length} producto{dets.length === 1 ? '' : 's'}</div>
+          <div className="muted small ped-meta">{pagoTxt(p)} · {dets.length} producto{dets.length === 1 ? '' : 's'}{p.vendedora_nombre ? ` · Vendedora: ${p.vendedora_nombre}` : ''}</div>
           {dets.length > 0 && <div className="det">
             {dets.map((d, i) => <div className="det-line" key={i}>
               <span>{d.nombre_snapshot} ×{d.cantidad}</span>
@@ -246,6 +245,13 @@ function Ventas() {
         <Field label="DNI*" hint="DNI único del cliente" error={!nuevoClienteForm.dni ? '' : nuevoClienteForm.dni.trim().length < 7 ? 'Mínimo 7 caracteres' : ''}><input placeholder="30123456" value={nuevoClienteForm.dni} onChange={e => setNuevoClienteForm(prev => ({ ...prev, dni: e.target.value }))} className={nuevoClienteForm.dni && nuevoClienteForm.dni.trim().length < 7 ? 'invalid' : ''} /></Field>
         <Field label="Dirección" hint="Opcional"><input placeholder="Av Colón 1234" value={nuevoClienteForm.direccion} onChange={e => setNuevoClienteForm(prev => ({ ...prev, direccion: e.target.value }))} /></Field>
       </div>
+      <h3>Mascotas <span className="muted small">(opcional)</span></h3>
+      {(nuevoClienteForm.mascotas || []).map((m, i) => <div className="line" key={i}>
+        <Field className="lc" label="Tipo"><select value={m.especie} onChange={e => setNuevoClienteForm(prev => ({ ...prev, mascotas: prev.mascotas.map((x, j) => j === i ? { ...x, especie: e.target.value } : x) }))}><option value="perro">Perro</option><option value="gato">Gato</option></select></Field>
+        <Field className="lp" label="Nombre"><input value={m.nombre} onChange={e => setNuevoClienteForm(prev => ({ ...prev, mascotas: prev.mascotas.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x) }))} /></Field>
+        <button className="ghost" onClick={() => setNuevoClienteForm(prev => ({ ...prev, mascotas: prev.mascotas.filter((_, j) => j !== i) }))}>-</button>
+      </div>)}
+      <button className="ghost" onClick={() => setNuevoClienteForm(prev => ({ ...prev, mascotas: [...prev.mascotas, { especie: 'perro', nombre: '' }] }))}>+ Agregar mascota</button>
       {nuevoClienteErr && <p className="err">{nuevoClienteErr}</p>}
       <div className="modal-actions">
         <button className="ghost" onClick={() => { setShowNuevoCliente(false); setNuevoClienteErr(''); }}>Cancelar</button>

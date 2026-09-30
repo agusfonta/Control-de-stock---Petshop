@@ -42,7 +42,7 @@ def _medio_dominante(
     return dom
 
 
-def crear_venta(db: Session, data: schemas.PedidoCreate) -> models.Pedido:
+def crear_venta(db: Session, data: schemas.PedidoCreate, vendedor: models.User | None = None) -> models.Pedido:
     cliente = db.get(models.Cliente, data.cliente_id)
     if not cliente:
         raise SalesError(404, "Cliente no existe")
@@ -131,6 +131,7 @@ def crear_venta(db: Session, data: schemas.PedidoCreate) -> models.Pedido:
         descuento_valor=data.descuento_valor,
         subtotal=subtotal,
         total=total,
+        vendedora_id=vendedor.id if vendedor else None,
         detalles=detalles_db,
         pagos=[
             models.PagoPedido(metodo=metodo, monto=monto)

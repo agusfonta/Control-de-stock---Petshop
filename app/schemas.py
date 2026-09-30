@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
-from app.models import MetodoPago, TipoDescuento, TipoMovCaja, TipoMovProveedor, Unidad
+from app.models import EspecieMascota, MetodoPago, TipoDescuento, TipoMovCaja, TipoMovProveedor, Unidad
 
 
 def _url_ok_value(v):
@@ -34,7 +34,7 @@ class ProductoCreate(BaseModel):
     marca: Optional[str] = Field(default=None, max_length=80)
     unidad: Unidad = Unidad.unidad
     precio_costo: float = Field(ge=0)
-    precio_venta: float = Field(gt=0)
+    precio_venta: Optional[float] = Field(default=None, gt=0)
     stock: int = Field(ge=0)
     stock_minimo: int = Field(default=10, ge=0)
     imagen_url: Optional[str] = None
@@ -97,17 +97,29 @@ class ProductoOut(BaseModel):
 
 
 # ---------- Clientes ----------
+class MascotaIn(BaseModel):
+    especie: EspecieMascota
+    nombre: str = Field(min_length=1, max_length=80)
+
+
+class MascotaOut(MascotaIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
 class ClienteCreate(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     email: EmailStr
     telefono: Optional[str] = Field(default=None, max_length=40)
     dni: str = Field(min_length=7, max_length=20)
     direccion: Optional[str] = Field(default=None, max_length=250)
+    mascotas: List[MascotaIn] = Field(default_factory=list, max_length=20)
 
 
 class ClienteOut(ClienteCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    mascotas: List[MascotaOut] = []
 
 
 # ---------- Pedidos ----------
@@ -181,6 +193,7 @@ class PedidoOut(BaseModel):
     descuento_valor: float
     subtotal: float
     total: float
+    vendedora_nombre: Optional[str] = None
     detalles: List[DetalleOut] = []
     pagos: List[PagoOut] = []
     es_mixto: bool = False
@@ -209,6 +222,18 @@ class ProveedorCreate(BaseModel):
     telefono: Optional[str] = Field(default=None, max_length=40)
     alias: Optional[str] = Field(default=None, max_length=120)
     dias_entrega: Optional[str] = Field(default=None, max_length=120)
+    pronto_pago_dias: Optional[int] = Field(default=None, ge=0, le=3650)
+    pronto_pago_porcentaje: Optional[float] = Field(default=None, ge=0, le=100)
+
+
+class ProveedorUpdate(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    contacto: Optional[str] = Field(default=None, max_length=120)
+    telefono: Optional[str] = Field(default=None, max_length=40)
+    alias: Optional[str] = Field(default=None, max_length=120)
+    dias_entrega: Optional[str] = Field(default=None, max_length=120)
+    pronto_pago_dias: Optional[int] = Field(default=None, ge=0, le=3650)
+    pronto_pago_porcentaje: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class ProveedorOut(ProveedorCreate):
@@ -286,6 +311,37 @@ class CompraUpdate(BaseModel):
     medio_pago: Optional[MetodoPago] = None
 
 
+class PagoCompraIn(BaseModel):
+    medio_pago: Optional[MetodoPago] = None
+    monto: Optional[float] = Field(default=None, ge=0, le=1000000000)
+    descuento: float = Field(default=0, ge=0, le=1000000000)
+
+    @model_validator(mode="after")
+    def _pago_ok(self):
+        if self.monto is not None and self.monto + self.descuento <= 0:
+            raise ValueError("monto o descuento debe ser mayor a 0")
+        return self
+
+
+class PagoCompraOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    fecha: Optional[datetime] = None
+    medio: MetodoPago
+    monto: float
+    descuento: float
+    total_aplicado: float = 0
+    legado: bool = False
+
+
+class ConfiguracionPreciosIn(BaseModel):
+    margen_venta_porcentaje: float = Field(ge=0, le=1000)
+
+
+class ConfiguracionPreciosOut(BaseModel):
+    margen_venta_porcentaje: float
+
+
 class DetalleCompraOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -309,6 +365,11 @@ class CompraOut(BaseModel):
     medio_pago: Optional[MetodoPago] = None
     monto: float
     detalles: List[DetalleCompraOut] = []
+    pagos: List[PagoCompraOut] = []
+    total_pagado: float = 0
+    total_descuentos: float = 0
+    saldo_pendiente: float = 0
+    sugerencia_pronto_pago: float = 0
 
 
 class UserCreate(BaseModel):

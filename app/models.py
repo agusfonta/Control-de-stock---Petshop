@@ -24,8 +24,9 @@ class EstadoPedido(str, enum.Enum):
 class MetodoPago(str, enum.Enum):
     efectivo = "efectivo"
     tarjeta = "tarjeta"  # legacy, se conserva por compatibilidad
-    transferencia = "transferencia"
-    mercadopago = "mercadopago"
+    qr = "qr"
+    transferencia = "transferencia"  # legacy, reemplazado por QR en nuevos registros
+    mercadopago = "mercadopago"  # legacy, reemplazado por QR en nuevos registros
     debito = "debito"
     credito = "credito"
 
@@ -34,6 +35,11 @@ class TipoDescuento(str, enum.Enum):
     ningun = "ningun"
     porcentaje = "porcentaje"
     monto_fijo = "monto_fijo"
+
+
+class EspecieMascota(str, enum.Enum):
+    perro = "perro"
+    gato = "gato"
 
 
 class TipoMovimiento(str, enum.Enum):
@@ -110,6 +116,16 @@ class Cliente(Base):
     dni = Column(String(20), unique=True, nullable=False, index=True)
     direccion = Column(String(250), nullable=True)
     pedidos = relationship("Pedido", back_populates="cliente")
+    mascotas = relationship("Mascota", back_populates="cliente", cascade="all, delete-orphan")
+
+
+class Mascota(Base):
+    __tablename__ = "mascotas"
+    id = Column(Integer, primary_key=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
+    especie = Column(Enum(EspecieMascota), nullable=False)
+    nombre = Column(String(80), nullable=False)
+    cliente = relationship("Cliente", back_populates="mascotas")
 
 
 class Pedido(Base):
@@ -127,6 +143,8 @@ class Pedido(Base):
     cliente = relationship("Cliente", back_populates="pedidos")
     detalles = relationship("DetallePedido", back_populates="pedido", cascade="all, delete-orphan")
     pagos = relationship("PagoPedido", back_populates="pedido", cascade="all, delete-orphan")
+    vendedora_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    vendedora = relationship("User", foreign_keys=[vendedora_id])
 
 
 class PagoPedido(Base):
@@ -175,6 +193,8 @@ class Proveedor(Base):
     telefono = Column(String(40), nullable=True)
     alias = Column(String(120), nullable=True)
     dias_entrega = Column(String(120), nullable=True)
+    pronto_pago_dias = Column(Integer, nullable=True)
+    pronto_pago_porcentaje = Column(Numeric(14, 2), nullable=True)
     movimientos = relationship("MovimientoProveedor", back_populates="proveedor", cascade="all, delete-orphan")
 
 
@@ -216,6 +236,7 @@ class Compra(Base):
     monto = Column(Numeric(14, 2), nullable=False, default=0)  # calculado de las líneas
     proveedor = relationship("Proveedor")
     detalles = relationship("DetalleCompra", back_populates="compra", cascade="all, delete-orphan")
+    pagos = relationship("PagoCompra", back_populates="compra", cascade="all, delete-orphan")
 
 
 class DetalleCompra(Base):
@@ -227,6 +248,24 @@ class DetalleCompra(Base):
     costo_unitario = Column(Numeric(14, 2), nullable=False)  # snapshot (default: precio_costo)
     subtotal = Column(Numeric(14, 2), nullable=False)
     compra = relationship("Compra", back_populates="detalles")
+
+
+class PagoCompra(Base):
+    """Pago individual de una compra. Permite pagos parciales y descuentos aplicados al saldo."""
+    __tablename__ = "pagos_compra"
+    id = Column(Integer, primary_key=True)
+    compra_id = Column(Integer, ForeignKey("compras.id", ondelete="CASCADE"), nullable=False, index=True)
+    fecha = Column(DateTime, nullable=True, default=utc_now)
+    medio = Column(Enum(MetodoPago), nullable=False)
+    monto = Column(Numeric(14, 2), nullable=False)
+    descuento = Column(Numeric(14, 2), nullable=False, default=0)
+    compra = relationship("Compra", back_populates="pagos")
+
+
+class Configuracion(Base):
+    __tablename__ = "configuracion"
+    id = Column(Integer, primary_key=True)
+    margen_venta_porcentaje = Column(Numeric(8, 2), nullable=False, default=0)
 
 
 class User(Base):

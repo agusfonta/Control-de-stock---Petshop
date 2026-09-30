@@ -5,7 +5,7 @@ import logging
 from app.core.config import settings
 from app.core.database import engine
 from app import models  # noqa: registra modelos
-from app.routers import categories, products, customers, orders, inventory, auth, caja, compras
+from app.routers import categories, products, customers, orders, inventory, auth, caja, compras, configuracion
 
 
 if settings.secret_key == "cambiar-en-produccion-petshop-demo-2026":
@@ -27,6 +27,7 @@ app.include_router(inventory.prov)
 app.include_router(inventory.rep)
 app.include_router(caja.router)
 app.include_router(compras.router)
+app.include_router(configuracion.router)
 
 @app.get("/health")
 def health():

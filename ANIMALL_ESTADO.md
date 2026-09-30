@@ -114,3 +114,14 @@ La configuración de `Settings` usa `SettingsConfigDict`, eliminando la adverten
 Se agregó `.github/workflows/ci.yml` para validar automáticamente en `main` y en pull requests. El backend instala las dependencias, ejecuta `alembic upgrade head`, `alembic check` y la suite de `pytest`; el frontend ejecuta `npm ci`, `npm run lint` y `npm run build`.
 
 El paquete de entrega no incluye `__pycache__`, archivos `.pyc` ni bases locales generadas por ejecuciones anteriores.
+
+
+## Cambios solicitados por la dueña
+
+- Ventas: un único bloque de pagos para uno o varios medios; transferencia y Mercado Pago se muestran como QR para nuevos registros. Valores legacy se conservan para datos históricos.
+- Clientes: mascotas opcionales (perro/gato y nombre), con soporte para varias mascotas por cliente.
+- Distribuidoras: pagos parciales, descuentos aplicados al pago y sugerencia de pronto pago configurable por proveedor.
+- Historial: resumen diario y mensual de entrada/salida.
+- Productos: margen configurable sobre costo y cálculo automático del precio de venta al crear productos.
+- Ventas: se guarda y muestra la vendedora autenticada.
+- Migración nueva: `20260930_business_requests`.

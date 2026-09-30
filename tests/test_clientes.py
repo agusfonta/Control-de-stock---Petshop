@@ -122,3 +122,65 @@ class TestClientesPedidos:
         """Get orders for non-existent client returns 404."""
         resp = await client.get("/clientes/99999/pedidos", headers=admin_headers)
         assert resp.status_code == 404
+class TestClientesUpdate:
+    async def test_update_cliente_y_mascotas(self, client: AsyncClient, admin_headers):
+        create_resp = await client.post(
+            "/clientes",
+            json={
+                "nombre": "Cliente Editar",
+                "email": "editar@test.com",
+                "telefono": "264-4556677",
+                "dni": "55555555",
+                "direccion": "Calle 1",
+                "mascotas": [{"especie": "perro", "nombre": "Luna"}],
+            },
+            headers=admin_headers,
+        )
+        assert create_resp.status_code == 201
+        cid = create_resp.json()["id"]
+
+        resp = await client.patch(
+            f"/clientes/{cid}",
+            json={
+                "nombre": "Cliente Editado",
+                "direccion": "Calle 2",
+                "telefono": "2644556688",
+                "mascotas": [{"especie": "gato", "nombre": "Mishi"}],
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["nombre"] == "Cliente Editado"
+        assert data["direccion"] == "Calle 2"
+        assert data["telefono"] == "2644556688"
+        assert [(m["especie"], m["nombre"]) for m in data["mascotas"]] == [("gato", "Mishi")]
+
+    async def test_update_cliente_rejects_duplicate_email(self, client: AsyncClient, admin_headers):
+        await client.post("/clientes", json={"nombre": "Aaa", "email": "a@test.com", "dni": "56565656"}, headers=admin_headers)
+        r2 = await client.post("/clientes", json={"nombre": "Bbb", "email": "b@test.com", "dni": "57575757"}, headers=admin_headers)
+        cid = r2.json()["id"]
+        resp = await client.patch(f"/clientes/{cid}", json={"email": "a@test.com"}, headers=admin_headers)
+        assert resp.status_code == 400
+
+    async def test_update_cliente_404(self, client: AsyncClient, admin_headers):
+        resp = await client.patch("/clientes/99999", json={"nombre": "No existe"}, headers=admin_headers)
+        assert resp.status_code == 404
+
+    async def test_create_cliente_rejects_invalid_phone(self, client: AsyncClient, admin_headers):
+        resp = await client.post(
+            "/clientes",
+            json={"nombre": "Telefono Malo", "email": "telmalo@test.com", "telefono": "264r457656", "dni": "58585858"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 422
+
+    async def test_update_cliente_rejects_invalid_phone(self, client: AsyncClient, admin_headers):
+        r = await client.post(
+            "/clientes",
+            json={"nombre": "Telefono Edit", "email": "teledit@test.com", "telefono": "264-457656", "dni": "59595959"},
+            headers=admin_headers,
+        )
+        cid = r.json()["id"]
+        resp = await client.patch(f"/clientes/{cid}", json={"telefono": "264r457656"}, headers=admin_headers)
+        assert resp.status_code == 422

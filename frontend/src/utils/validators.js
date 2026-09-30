@@ -1,4 +1,10 @@
 const isEmailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || '').trim());
+const isPhoneOk = (v) => {
+  const value = (v || '').trim();
+  if (!value) return true;
+  const normalized = value.replace(/[\s()-]/g, '');
+  return /^\+?[0-9]{7,15}$/.test(normalized);
+};
 const errNombre = (v, min = 2) => {
   if (!(v || '').trim()) return 'Completá este campo';
   if ((v || '').trim().length < min) return `Mínimo ${min} caracteres`;
@@ -30,4 +36,4 @@ const errDtoValor = (tipo, valor) => {
   return n >= 0 ? '' : 'No puede ser negativo';
 };
 
-export { isEmailOk, errNombre, errMayor0, errMayorIgual0, errEnteroMin, errDtoValor };
+export { isEmailOk, isPhoneOk, errNombre, errMayor0, errMayorIgual0, errEnteroMin, errDtoValor };

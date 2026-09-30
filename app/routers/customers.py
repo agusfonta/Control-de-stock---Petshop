@@ -17,6 +17,34 @@ def crear(d: schemas.ClienteCreate, db: Session = Depends(get_db)):
     db.add(c); db.commit(); db.refresh(c)
     return c
 
+
+
+@router.patch("/{cid}", response_model=schemas.ClienteOut, dependencies=[leer])
+def actualizar(cid: int, d: schemas.ClienteUpdate, db: Session = Depends(get_db)):
+    c = db.query(models.Cliente).options(joinedload(models.Cliente.mascotas)).filter(models.Cliente.id == cid).first()
+    if not c:
+        raise HTTPException(404, "Cliente no encontrado")
+
+    if d.email is not None:
+        q = db.query(models.Cliente).filter(models.Cliente.email == d.email, models.Cliente.id != cid).first()
+        if q:
+            raise HTTPException(400, "Email o DNI ya registrado")
+    if d.dni is not None:
+        q = db.query(models.Cliente).filter(models.Cliente.dni == d.dni, models.Cliente.id != cid).first()
+        if q:
+            raise HTTPException(400, "Email o DNI ya registrado")
+
+    payload = d.model_dump(exclude_unset=True, exclude={"mascotas"})
+    for field, value in payload.items():
+        setattr(c, field, value)
+
+    if d.mascotas is not None:
+        c.mascotas = [models.Mascota(especie=m.especie, nombre=m.nombre.strip()) for m in d.mascotas]
+
+    db.commit()
+    db.refresh(c)
+    return c
+
 @router.get("", response_model=list[schemas.ClienteOut], dependencies=[leer])
 def listar(db: Session = Depends(get_db)):
     return db.query(models.Cliente).options(joinedload(models.Cliente.mascotas)).order_by(models.Cliente.nombre).all()

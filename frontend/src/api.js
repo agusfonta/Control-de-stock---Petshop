@@ -64,6 +64,7 @@ export const api = {
   ingreso: (id, cantidad) => req(`/productos/${id}/stock/ingreso`, { method: 'POST', body: JSON.stringify({ cantidad }) }),
   clientes: () => req('/clientes'),
   createCliente: (d) => req('/clientes', { method: 'POST', body: JSON.stringify(d) }),
+  updateCliente: (id, d) => req(`/clientes/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
   pedidosCliente: (id) => req(`/clientes/${id}/pedidos`),
   pedidos: (fecha) => req(`/pedidos${fecha ? `?fecha=${fecha}` : ''}`),
   createPedido: (d) => req('/pedidos', { method: 'POST', body: JSON.stringify(d) }),
@@ -100,7 +101,16 @@ export const api = {
   deleteCompra: (id) => req(`/compras/${id}`, { method: 'DELETE' }),
   deudasProv: () => req('/compras/deudas'),
   caja: (fecha) => req(`/caja${fecha ? `?fecha=${fecha}` : ''}`),
-  cajaMensual: (mes) => req(`/caja/mensual${mes ? `?mes=${mes}` : ''}`),
+  cajaMensual: (params = {}) => {
+    const p = typeof params === 'string' ? { mes: params } : params;
+    const q = new URLSearchParams();
+    if (p.mes) q.set('mes', p.mes);
+    if (p.tipo) q.set('tipo', p.tipo);
+    if (p.proveedor_id) q.set('proveedor_id', p.proveedor_id);
+    if (p.cliente_id) q.set('cliente_id', p.cliente_id);
+    const s = q.toString();
+    return req(`/caja/mensual${s ? `?${s}` : ''}`);
+  },
   createCajaMov: (d) => req('/caja', { method: 'POST', body: JSON.stringify(d) }),
   deleteCajaMov: (id) => req(`/caja/${id}`, { method: 'DELETE' }),
 };

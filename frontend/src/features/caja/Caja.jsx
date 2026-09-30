@@ -3,7 +3,7 @@ import { api } from '../../api';
 import Err from '../../components/Err';
 import Field from '../../components/Field';
 import { MEDIOS_SEL, MEDIO_SHORT } from '../../constants/paymentMethods';
-import { todayLocal, shiftLocalDay, formatApiTime, parseApiUtc } from '../../utils/dates';
+import { todayLocal, shiftLocalDay, formatApiTime, formatApiDate, parseApiUtc } from '../../utils/dates';
 
 function Caja() {
   const hoy = todayLocal();
@@ -12,6 +12,11 @@ function Caja() {
   const [mensual, setMensual] = useState(null);
   const [modo, setModo] = useState('dia');
   const [mes, setMes] = useState(hoy.slice(0, 7));
+  const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroProveedor, setFiltroProveedor] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [clientes, setClientes] = useState([]);
+  const [proveedores, setProveedores] = useState([]);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const [f, setF] = useState({ tipo: 'SALIDA', medio: 'efectivo', descripcion: '', monto: '' });
@@ -23,10 +28,30 @@ function Caja() {
   };
   const loadMes = async m => {
     setErr(''); setLoading(true);
-    try { setMensual(await api.cajaMensual(m)); } catch (e) { setErr(e.message); } finally { setLoading(false); }
+    try {
+      setMensual(await api.cajaMensual({
+        mes: m,
+        tipo: filtroTipo,
+        proveedor_id: filtroProveedor,
+        cliente_id: filtroCliente,
+      }));
+    } catch (e) { setErr(e.message); } finally { setLoading(false); }
   };
   useEffect(() => { if (modo === 'dia') loadDia(dia); }, [dia, modo]);
-  useEffect(() => { if (modo === 'mes') loadMes(mes); }, [mes, modo]);
+  useEffect(() => {
+    if (modo !== 'mes') return;
+    loadMes(mes);
+  }, [mes, modo, filtroTipo, filtroProveedor, filtroCliente]);
+  useEffect(() => {
+    const cargarFiltros = async () => {
+      try {
+        const [clientesData, proveedoresData] = await Promise.all([api.clientes(), api.proveedores()]);
+        setClientes(clientesData || []);
+        setProveedores(proveedoresData || []);
+      } catch (e) { setErr(e.message); }
+    };
+    cargarFiltros();
+  }, []);
 
   const mover = d => setDia(shiftLocalDay(dia, d));
   const setDiaLoad = v => { if (v) setDia(v > hoy ? hoy : v); };
@@ -68,8 +93,36 @@ function Caja() {
       <h3>Movimientos {movs.length > 0 && <span className="muted">· {movs.length}</span>}</h3>
       {loading ? <p className="muted">Cargando…</p> : ordenados.length === 0 ? <p className="muted">Sin movimientos este día.</p> : <div className="tbl-wrap"><table><thead><tr><th>Hora</th><th>Detalle</th><th>Medio</th><th>Entrada</th><th>Salida</th><th>Origen</th><th></th></tr></thead><tbody>{ordenados.map(m => <tr key={m.id}><td>{formatApiTime(m.fecha)}</td><td>{m.descripcion}</td><td><span className="badge ok">{MEDIO_SHORT[m.medio] || m.medio}</span></td><td>{m.tipo === 'ENTRADA' ? <b className="in">{fmt(m.monto)}</b> : '—'}</td><td>{m.tipo === 'SALIDA' ? <b className="out">{fmt(m.monto)}</b> : '—'}</td><td><span className={m.automatico ? 'badge ok' : 'sin-cat'}>{origenDe(m)}</span></td><td>{!m.automatico && <button onClick={() => borrar(m)}>borrar</button>}</td></tr>)}</tbody></table></div>}
     </> : <>
-      <div className="cards"><div className="card"><span>Entrada del mes</span><b className="in">{loading ? '…' : fmt(mensual?.total_entrada)}</b><small>{(mensual?.por_dia || []).length} días con movimientos</small></div><div className="card"><span>Salida del mes</span><b className="out">{loading ? '…' : fmt(mensual?.total_salida)}</b><small>Todos los egresos</small></div><div className="card"><span>Balance del mes</span><b className={(mensual?.balance || 0) < 0 ? 'out' : (mensual?.balance || 0) > 0 ? 'in' : ''}>{loading ? '…' : fmt(mensual?.balance)}</b><small>entrada − salida</small></div></div>
-      {(mensual?.por_dia || []).length === 0 ? <p className="muted">Sin movimientos en este mes.</p> : <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Balance</th></tr></thead><tbody>{mensual.por_dia.map(d => <tr key={d.fecha}><td>{d.fecha}</td><td className="in">{fmt(d.entrada)}</td><td className="out">{fmt(d.salida)}</td><td>{fmt(d.balance)}</td></tr>)}</tbody></table></div>}
+      <div className="row history-filters">
+        <Field label="Mostrar">
+          <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
+            <option value="">Entradas y salidas</option>
+            <option value="ENTRADA">Solo entradas</option>
+            <option value="SALIDA">Solo salidas</option>
+          </select>
+        </Field>
+        <Field label="Distribuidora">
+          <select value={filtroProveedor} onChange={e => setFiltroProveedor(e.target.value)}>
+            <option value="">Todas</option>
+            {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </Field>
+        <Field label="Cliente">
+          <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)}>
+            <option value="">Todos</option>
+            {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="cards"><div className="card"><span>Entrada del mes</span><b className="in">{loading ? '…' : fmt(mensual?.total_entrada)}</b><small>Según filtros aplicados</small></div><div className="card"><span>Salida del mes</span><b className="out">{loading ? '…' : fmt(mensual?.total_salida)}</b><small>Según filtros aplicados</small></div><div className="card"><span>Balance del mes</span><b className={(mensual?.balance || 0) < 0 ? 'out' : (mensual?.balance || 0) > 0 ? 'in' : ''}>{loading ? '…' : fmt(mensual?.balance)}</b><small>entrada − salida</small></div></div>
+      {loading ? <p className="muted">Cargando…</p> : (mensual?.movimientos || []).length === 0 ? <p className="muted">Sin movimientos para este filtro.</p> : <div className="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Detalle</th><th>Medio</th><th>Entrada</th><th>Salida</th><th>Origen</th></tr></thead><tbody>{mensual.movimientos.map(m => {
+        const origen = m.pedido_id
+          ? `venta #${m.pedido_id}${m.cliente_nombre ? ` · ${m.cliente_nombre}` : ''}`
+          : m.compra_id
+            ? `compra #${m.compra_id}${m.proveedor_nombre ? ` · ${m.proveedor_nombre}` : ''}`
+            : (m.automatico ? 'auto' : 'manual');
+        return <tr key={m.id}><td>{formatApiDate(m.fecha)}</td><td>{formatApiTime(m.fecha)}</td><td>{m.descripcion}</td><td><span className="badge ok">{MEDIO_SHORT[m.medio] || m.medio}</span></td><td>{m.tipo === 'ENTRADA' ? <b className="in">{fmt(m.monto)}</b> : '—'}</td><td>{m.tipo === 'SALIDA' ? <b className="out">{fmt(m.monto)}</b> : '—'}</td><td><span className={m.automatico ? 'badge ok' : 'sin-cat'}>{origen}</span></td></tr>;
+      })}</tbody></table></div>}
     </>}
   </section>;
 }

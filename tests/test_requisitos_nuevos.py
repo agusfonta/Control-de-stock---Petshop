@@ -103,3 +103,77 @@ class TestMediosPagoQR:
         assert MetodoPago.qr.value == "qr"
         assert MetodoPago.transferencia.value == "transferencia"
         assert MetodoPago.mercadopago.value == "mercadopago"
+
+class TestHistorialMensualDetalle:
+    async def test_mensual_incluye_detalle_y_filtros_cliente(self, client: AsyncClient, admin_headers, session):
+        from datetime import datetime
+        from tests.factories import create_cliente, create_categoria, create_producto
+        from app import models
+
+        cli1 = create_cliente(session, nombre="Cliente Mes Uno", email="mes1@test.com", dni="60000001")
+        cli2 = create_cliente(session, nombre="Cliente Mes Dos", email="mes2@test.com", dni="60000002")
+        cat = create_categoria(session, nombre="Cat Mes Detalle")
+        prod = create_producto(session, nombre="Prod Mes Detalle", precio_venta=100, stock=5, categorias=[cat])
+        pedido = models.Pedido(
+            cliente_id=cli1.id, fecha=datetime(2026, 9, 3, 15, 30), estado=models.EstadoPedido.pagado,
+            metodo_pago=models.MetodoPago.efectivo, moneda="ARS", descuento_tipo=models.TipoDescuento.ningun,
+            descuento_valor=0, subtotal=100, total=100,
+            detalles=[models.DetallePedido(producto_id=prod.id, cantidad=1, precio_unitario=100,
+                                           nombre_snapshot=prod.nombre, descuento_tipo=models.TipoDescuento.ningun,
+                                           descuento_valor=0, subtotal_linea=100)],
+            pagos=[models.PagoPedido(metodo=models.MetodoPago.efectivo, monto=100)],
+        )
+        session.add(pedido)
+        session.flush()
+        session.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.ENTRADA, medio=models.MetodoPago.efectivo,
+            descripcion="Venta #detalle", monto=100, pedido_id=pedido.id, fecha=datetime(2026, 9, 3, 15, 30),
+        ))
+        session.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.SALIDA, medio=models.MetodoPago.efectivo,
+            descripcion="Gasto mes", monto=30, fecha=datetime(2026, 9, 4, 10, 0),
+        ))
+        session.commit()
+
+        resp = await client.get("/caja/mensual?mes=2026-09", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["movimientos"]) == 2
+        venta = next(m for m in data["movimientos"] if m["pedido_id"] == pedido.id)
+        assert venta["cliente_nombre"] == cli1.nombre
+        assert "movimientos" in data
+        assert "hora" not in venta
+
+        filtrado = await client.get(f"/caja/mensual?mes=2026-09&tipo=ENTRADA&cliente_id={cli1.id}", headers=admin_headers)
+        assert filtrado.status_code == 200
+        fdata = filtrado.json()
+        assert len(fdata["movimientos"]) == 1
+        assert fdata["total_entrada"] == 100
+        assert fdata["total_salida"] == 0
+
+    async def test_mensual_filtra_por_distribuidora(self, client: AsyncClient, admin_headers, session):
+        from datetime import datetime
+        from tests.factories import create_proveedor
+        from app import models
+
+        prov1 = create_proveedor(session, nombre="Distribuidora Mes Uno")
+        prov2 = create_proveedor(session, nombre="Distribuidora Mes Dos")
+        comp = models.Compra(proveedor_id=prov1.id, nro_boleta="M-001", fecha_pedido=datetime(2026, 9, 5, 10, 0), monto=200, pagado=False)
+        session.add(comp)
+        session.flush()
+        session.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.SALIDA, medio=models.MetodoPago.efectivo,
+            descripcion="Pago Dist Uno", monto=200, compra_id=comp.id, fecha=datetime(2026, 9, 5, 11, 0),
+        ))
+        session.add(models.MovimientoCaja(
+            tipo=models.TipoMovCaja.SALIDA, medio=models.MetodoPago.efectivo,
+            descripcion="Gasto otro", monto=50, fecha=datetime(2026, 9, 6, 11, 0),
+        ))
+        session.commit()
+
+        resp = await client.get(f"/caja/mensual?mes=2026-09&proveedor_id={prov1.id}", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["movimientos"]) == 1
+        assert data["movimientos"][0]["proveedor_nombre"] == prov1.nombre
+        assert data["total_salida"] == 200

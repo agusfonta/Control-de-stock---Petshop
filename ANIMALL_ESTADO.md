@@ -134,3 +134,10 @@ La migración `20260930_integrity_constraints` mantiene el modelo SQLAlchemy y e
 - Productos: margen configurable sobre costo y cálculo automático del precio de venta al crear productos.
 - Ventas: se guarda y muestra la vendedora autenticada.
 - Migración nueva: `20260930_business_requests`.
+## Últimos cambios solicitados
+
+- Clientes: edición completa de datos y mascotas; menú de acciones con `⋯` y vista separada de mascotas.
+- Clientes: validación de teléfono con formato telefónico válido (sin letras).
+- Historial mensual: detalle movimiento por movimiento y filtros por entradas/salidas, distribuidora y cliente.
+- Tests actuales: 182 pasando.
+- Estos cambios no agregan una migración de base de datos.

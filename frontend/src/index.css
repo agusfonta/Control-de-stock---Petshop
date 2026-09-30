@@ -337,3 +337,13 @@ button.del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
 }
 .dot.active { background: var(--teal); transform: scale(1.25); }
 .dot:hover:not(.active) { background: #b2e4de; }
+
+.history-filters { align-items: end; flex-wrap: wrap; margin: 10px 0; }
+.history-filters .field { flex: 1 1 180px; }
+.action-menu-wrap { position: relative; display: inline-flex; }
+.menu-trigger { min-width: 34px; padding: 6px 10px; font-size: 18px; line-height: 1; }
+.action-menu { position: absolute; z-index: 10; right: 0; top: calc(100% + 4px); min-width: 145px; padding: 6px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); display: grid; gap: 3px; }
+.action-menu button { width: 100%; text-align: left; background: transparent; color: var(--ink); border: none; padding: 8px 10px; margin: 0; }
+.action-menu button:hover { background: var(--blush); }
+.pets-list { display: grid; gap: 8px; }
+.pet-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }

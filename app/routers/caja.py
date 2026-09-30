@@ -1,6 +1,10 @@
-from app.core.time import local_day_bounds_utc
+from datetime import date, datetime
+from calendar import monthrange
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.core.time import local_day_bounds_utc
 from app.core.database import get_db
 from app import models, schemas
 from app.deps import require_roles
@@ -13,7 +17,6 @@ leer = Depends(require_roles("admin", "vendedor"))
 
 def _parse_fecha(s: str):
     try:
-        from datetime import datetime
         return datetime.fromisoformat(s).date()
     except (ValueError, TypeError):
         raise HTTPException(422, f"Fecha inválida '{s}': usar formato YYYY-MM-DD")
@@ -25,49 +28,88 @@ def _out(m: models.MovimientoCaja) -> schemas.MovimientoCajaOut:
     return o
 
 
+def _monthly_out(m, cliente_nombre=None, proveedor_nombre=None):
+    o = schemas.MovimientoCajaMensualOut.model_validate(_out(m))
+    o.cliente_nombre = cliente_nombre
+    o.proveedor_nombre = proveedor_nombre
+    return o
+
+
 @router.get("", dependencies=[leer])
 def resumen(fecha: str | None = None, db: Session = Depends(get_db)):
-    """Caja del día: entradas/salidas, totales y desglose por medio (EF/MP/DB/CD/TR)."""
     q = db.query(models.MovimientoCaja).order_by(models.MovimientoCaja.fecha, models.MovimientoCaja.id)
     if fecha:
         ini, fin = local_day_bounds_utc(_parse_fecha(fecha))
-        q = q.filter(models.MovimientoCaja.fecha >= ini,
-                     models.MovimientoCaja.fecha < fin)
+        q = q.filter(models.MovimientoCaja.fecha >= ini, models.MovimientoCaja.fecha < fin)
     movs = q.limit(500).all()
     total_e = money(sum((m.monto for m in movs if m.tipo == models.TipoMovCaja.ENTRADA), money(0)))
     total_s = money(sum((m.monto for m in movs if m.tipo == models.TipoMovCaja.SALIDA), money(0)))
     por_medio: dict[str, dict[str, object]] = {}
     for m in movs:
         d = por_medio.setdefault(m.medio.value, {"entrada": money(0), "salida": money(0)})
-        d["entrada" if m.tipo == models.TipoMovCaja.ENTRADA else "salida"] = money(
-            d["entrada" if m.tipo == models.TipoMovCaja.ENTRADA else "salida"] + m.monto)
-    return {"movimientos": [_out(m) for m in movs],
-            "total_entrada": total_e, "total_salida": total_s,
-            "balance": money(total_e - total_s), "por_medio": por_medio}
-
+        key = "entrada" if m.tipo == models.TipoMovCaja.ENTRADA else "salida"
+        d[key] = money(d[key] + m.monto)
+    return {
+        "movimientos": [_out(m) for m in movs],
+        "total_entrada": total_e,
+        "total_salida": total_s,
+        "balance": money(total_e - total_s),
+        "por_medio": por_medio,
+    }
 
 
 @router.get("/mensual", dependencies=[leer])
-def resumen_mensual(mes: str | None = None, db: Session = Depends(get_db)):
-    from datetime import date, datetime
-    from calendar import monthrange
+def resumen_mensual(
+    mes: str | None = None,
+    tipo: models.TipoMovCaja | None = None,
+    proveedor_id: int | None = None,
+    cliente_id: int | None = None,
+    db: Session = Depends(get_db),
+):
     objetivo = mes or datetime.now().strftime("%Y-%m")
     try:
         year, month = [int(x) for x in objetivo.split("-")]
+        if month < 1 or month > 12:
+            raise ValueError
         inicio = date(year, month, 1)
         fin = date(year, month, monthrange(year, month)[1])
     except (ValueError, TypeError):
         raise HTTPException(422, "Mes inválido: usar YYYY-MM")
+
     ini_utc = local_day_bounds_utc(inicio)[0]
     fin_utc = local_day_bounds_utc(fin)[1]
-    movs = db.query(models.MovimientoCaja).filter(
-        models.MovimientoCaja.fecha >= ini_utc,
-        models.MovimientoCaja.fecha < fin_utc,
-    ).order_by(models.MovimientoCaja.fecha, models.MovimientoCaja.id).all()
-    total_e = money(sum((m.monto for m in movs if m.tipo == models.TipoMovCaja.ENTRADA), money(0)))
-    total_s = money(sum((m.monto for m in movs if m.tipo == models.TipoMovCaja.SALIDA), money(0)))
+
+    q = (
+        db.query(
+            models.MovimientoCaja,
+            models.Cliente.nombre.label("cliente_nombre"),
+            models.Proveedor.nombre.label("proveedor_nombre"),
+        )
+        .outerjoin(models.Pedido, models.MovimientoCaja.pedido_id == models.Pedido.id)
+        .outerjoin(models.Cliente, models.Pedido.cliente_id == models.Cliente.id)
+        .outerjoin(models.Compra, models.MovimientoCaja.compra_id == models.Compra.id)
+        .outerjoin(models.Proveedor, models.Compra.proveedor_id == models.Proveedor.id)
+        .filter(
+            models.MovimientoCaja.fecha >= ini_utc,
+            models.MovimientoCaja.fecha < fin_utc,
+        )
+        .order_by(models.MovimientoCaja.fecha, models.MovimientoCaja.id)
+    )
+    if tipo is not None:
+        q = q.filter(models.MovimientoCaja.tipo == tipo)
+    if proveedor_id is not None:
+        q = q.filter(models.Compra.proveedor_id == proveedor_id)
+    if cliente_id is not None:
+        q = q.filter(models.Pedido.cliente_id == cliente_id)
+
+    rows = q.all()
+    movimientos = [_monthly_out(m, cliente_nombre, proveedor_nombre) for m, cliente_nombre, proveedor_nombre in rows]
+
+    total_e = money(sum((m.monto for m, _, _ in rows if m.tipo == models.TipoMovCaja.ENTRADA), money(0)))
+    total_s = money(sum((m.monto for m, _, _ in rows if m.tipo == models.TipoMovCaja.SALIDA), money(0)))
+
     por_dia = {}
-    for m in movs:
+    for m, _, _ in rows:
         dia = m.fecha.date().isoformat()
         item = por_dia.setdefault(dia, {"entrada": money(0), "salida": money(0)})
         if m.tipo == models.TipoMovCaja.ENTRADA:
@@ -76,13 +118,21 @@ def resumen_mensual(mes: str | None = None, db: Session = Depends(get_db)):
             item["salida"] = money(item["salida"] + m.monto)
     for item in por_dia.values():
         item["balance"] = money(item["entrada"] - item["salida"])
+
     return {
         "mes": objetivo,
+        "filtros": {
+            "tipo": tipo.value if tipo else None,
+            "proveedor_id": proveedor_id,
+            "cliente_id": cliente_id,
+        },
         "total_entrada": total_e,
         "total_salida": total_s,
         "balance": money(total_e - total_s),
+        "movimientos": movimientos,
         "por_dia": [{"fecha": k, **v} for k, v in sorted(por_dia.items())],
     }
+
 
 @router.post("", response_model=schemas.MovimientoCajaOut, status_code=201, dependencies=[leer])
 def crear(d: schemas.MovimientoCajaCreate, db: Session = Depends(get_db)):

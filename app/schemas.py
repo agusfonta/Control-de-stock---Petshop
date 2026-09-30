@@ -1,6 +1,7 @@
 """Schemas Pydantic v2 con validación estricta."""
 from datetime import datetime
 from typing import List, Optional
+import re
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
 from app.models import EspecieMascota, MetodoPago, TipoDescuento, TipoMovCaja, TipoMovProveedor, Unidad
@@ -107,6 +108,18 @@ class MascotaOut(MascotaIn):
     id: int
 
 
+def _validar_telefono(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    value = v.strip()
+    if not value:
+        return None
+    normalized = re.sub(r"[\s()\-]", "", value)
+    if not re.fullmatch(r"\+?[0-9]{7,15}", normalized):
+        raise ValueError("Teléfono inválido: usá solo números y, opcionalmente, +, espacios, guiones o paréntesis")
+    return value
+
+
 class ClienteCreate(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     email: EmailStr
@@ -114,6 +127,25 @@ class ClienteCreate(BaseModel):
     dni: str = Field(min_length=7, max_length=20)
     direccion: Optional[str] = Field(default=None, max_length=250)
     mascotas: List[MascotaIn] = Field(default_factory=list, max_length=20)
+
+    @field_validator("telefono")
+    @classmethod
+    def _telefono_valido(cls, v):
+        return _validar_telefono(v)
+
+
+class ClienteUpdate(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    email: Optional[EmailStr] = None
+    telefono: Optional[str] = Field(default=None, max_length=40)
+    dni: Optional[str] = Field(default=None, min_length=7, max_length=20)
+    direccion: Optional[str] = Field(default=None, max_length=250)
+    mascotas: Optional[List[MascotaIn]] = Field(default=None, max_length=20)
+
+    @field_validator("telefono")
+    @classmethod
+    def _telefono_valido(cls, v):
+        return _validar_telefono(v)
 
 
 class ClienteOut(ClienteCreate):
@@ -281,6 +313,11 @@ class MovimientoCajaOut(BaseModel):
     pedido_id: Optional[int] = None
     compra_id: Optional[int] = None
     automatico: bool = False  # True si lo generó una venta/pago (no se puede borrar)
+
+
+class MovimientoCajaMensualOut(MovimientoCajaOut):
+    cliente_nombre: Optional[str] = None
+    proveedor_nombre: Optional[str] = None
 
 
 class DetalleCompraIn(BaseModel):

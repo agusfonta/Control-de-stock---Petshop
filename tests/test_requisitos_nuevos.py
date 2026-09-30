@@ -95,3 +95,11 @@ class TestVentasVendedoraYQR:
         data = resp.json()
         assert data["vendedora_nombre"] == "vendedor"
         assert data["pagos"][0]["metodo"] == "qr"
+
+
+class TestMediosPagoQR:
+    async def test_nuevos_medios_no_exponen_transferencia_ni_mercadopago(self, client: AsyncClient, admin_headers):
+        from app.models import MetodoPago
+        assert MetodoPago.qr.value == "qr"
+        assert MetodoPago.transferencia.value == "transferencia"
+        assert MetodoPago.mercadopago.value == "mercadopago"

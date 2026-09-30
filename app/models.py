@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy - PetShop."""
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Table, Text,
+    Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Table, Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -88,6 +88,12 @@ class Categoria(Base):
 
 class Producto(Base):
     __tablename__ = "productos"
+    __table_args__ = (
+        CheckConstraint("precio_costo >= 0", name="ck_productos_precio_costo_nonnegative"),
+        CheckConstraint("precio_venta >= 0", name="ck_productos_precio_venta_nonnegative"),
+        CheckConstraint("stock >= 0", name="ck_productos_stock_nonnegative"),
+        CheckConstraint("stock_minimo >= 0", name="ck_productos_stock_minimo_nonnegative"),
+    )
     id = Column(Integer, primary_key=True)
     sku = Column(String(60), unique=True, nullable=True, index=True)
     nombre = Column(String(120), nullable=False, index=True)
@@ -121,6 +127,9 @@ class Cliente(Base):
 
 class Mascota(Base):
     __tablename__ = "mascotas"
+    __table_args__ = (
+        CheckConstraint("length(trim(nombre)) > 0", name="ck_mascotas_nombre_not_blank"),
+    )
     id = Column(Integer, primary_key=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
     especie = Column(Enum(EspecieMascota), nullable=False)
@@ -130,6 +139,14 @@ class Mascota(Base):
 
 class Pedido(Base):
     __tablename__ = "pedidos"
+    __table_args__ = (
+        CheckConstraint("descuento_valor >= 0", name="ck_pedidos_descuento_nonnegative"),
+        CheckConstraint("descuento_tipo != 'porcentaje' OR descuento_valor <= 100", name="ck_pedidos_descuento_porcentaje_max"),
+        CheckConstraint("descuento_tipo != 'ningun' OR descuento_valor = 0", name="ck_pedidos_descuento_ningun_zero"),
+        CheckConstraint("subtotal >= 0", name="ck_pedidos_subtotal_nonnegative"),
+        CheckConstraint("total >= 0", name="ck_pedidos_total_nonnegative"),
+        CheckConstraint("total <= subtotal", name="ck_pedidos_total_lte_subtotal"),
+    )
     id = Column(Integer, primary_key=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     fecha = Column(DateTime, nullable=False, default=utc_now)
@@ -150,6 +167,9 @@ class Pedido(Base):
 class PagoPedido(Base):
     """Desglose de medios de pago de una venta (uno o varios por pedido)."""
     __tablename__ = "pagos_pedido"
+    __table_args__ = (
+        CheckConstraint("monto > 0", name="ck_pagos_pedido_monto_positive"),
+    )
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False, index=True)
     metodo = Column(Enum(MetodoPago), nullable=False)
@@ -159,6 +179,14 @@ class PagoPedido(Base):
 
 class DetallePedido(Base):
     __tablename__ = "detalles_pedido"
+    __table_args__ = (
+        CheckConstraint("cantidad > 0", name="ck_detalles_pedido_cantidad_positive"),
+        CheckConstraint("precio_unitario >= 0", name="ck_detalles_pedido_precio_nonnegative"),
+        CheckConstraint("descuento_valor >= 0", name="ck_detalles_pedido_descuento_nonnegative"),
+        CheckConstraint("descuento_tipo != 'porcentaje' OR descuento_valor <= 100", name="ck_detalles_pedido_descuento_porcentaje_max"),
+        CheckConstraint("descuento_tipo != 'ningun' OR descuento_valor = 0", name="ck_detalles_pedido_descuento_ningun_zero"),
+        CheckConstraint("subtotal_linea >= 0", name="ck_detalles_pedido_subtotal_nonnegative"),
+    )
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
@@ -173,6 +201,11 @@ class DetallePedido(Base):
 
 class MovimientoStock(Base):
     __tablename__ = "movimientos_stock"
+    __table_args__ = (
+        CheckConstraint("cantidad > 0", name="ck_movimientos_stock_cantidad_positive"),
+        CheckConstraint("stock_anterior >= 0", name="ck_movimientos_stock_anterior_nonnegative"),
+        CheckConstraint("stock_nuevo >= 0", name="ck_movimientos_stock_nuevo_nonnegative"),
+    )
     id = Column(Integer, primary_key=True)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False, index=True)
     tipo = Column(Enum(TipoMovimiento), nullable=False)
@@ -187,6 +220,10 @@ class MovimientoStock(Base):
 
 class Proveedor(Base):
     __tablename__ = "proveedores"
+    __table_args__ = (
+        CheckConstraint("pronto_pago_dias >= 0 AND pronto_pago_dias <= 3650", name="ck_proveedores_pronto_pago_dias_range"),
+        CheckConstraint("pronto_pago_porcentaje >= 0 AND pronto_pago_porcentaje <= 100", name="ck_proveedores_pronto_pago_porcentaje_range"),
+    )
     id = Column(Integer, primary_key=True)
     nombre = Column(String(120), nullable=False, unique=True)
     contacto = Column(String(120), nullable=True)
@@ -201,6 +238,9 @@ class Proveedor(Base):
 class MovimientoProveedor(Base):
     """Cuenta corriente por distribuidor: boleta 001 suma deuda, pagos 002/003 y N.crédito 004 restan."""
     __tablename__ = "movimientos_proveedor"
+    __table_args__ = (
+        CheckConstraint("monto > 0", name="ck_movimientos_proveedor_monto_positive"),
+    )
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False, index=True)
     fecha = Column(DateTime, nullable=False, default=utc_now)
@@ -213,6 +253,9 @@ class MovimientoProveedor(Base):
 class MovimientoCaja(Base):
     """Caja diaria: ENTRADA (ventas auto + extras manuales) y SALIDA (pagos a proveedor auto + gastos manuales)."""
     __tablename__ = "movimientos_caja"
+    __table_args__ = (
+        CheckConstraint("monto > 0", name="ck_movimientos_caja_monto_positive"),
+    )
     id = Column(Integer, primary_key=True)
     fecha = Column(DateTime, nullable=False, default=utc_now, index=True)
     tipo = Column(Enum(TipoMovCaja), nullable=False)
@@ -226,6 +269,9 @@ class MovimientoCaja(Base):
 class Compra(Base):
     """Pedido a distribuidora: se registra, al entregarse entra stock, al pagarse sale caja."""
     __tablename__ = "compras"
+    __table_args__ = (
+        CheckConstraint("monto >= 0", name="ck_compras_monto_nonnegative"),
+    )
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False, index=True)
     fecha_pedido = Column(DateTime, nullable=False, default=utc_now, index=True)
@@ -241,6 +287,11 @@ class Compra(Base):
 
 class DetalleCompra(Base):
     __tablename__ = "detalles_compra"
+    __table_args__ = (
+        CheckConstraint("cantidad > 0", name="ck_detalles_compra_cantidad_positive"),
+        CheckConstraint("costo_unitario >= 0", name="ck_detalles_compra_costo_nonnegative"),
+        CheckConstraint("subtotal >= 0", name="ck_detalles_compra_subtotal_nonnegative"),
+    )
     id = Column(Integer, primary_key=True)
     compra_id = Column(Integer, ForeignKey("compras.id", ondelete="CASCADE"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
@@ -253,6 +304,11 @@ class DetalleCompra(Base):
 class PagoCompra(Base):
     """Pago individual de una compra. Permite pagos parciales y descuentos aplicados al saldo."""
     __tablename__ = "pagos_compra"
+    __table_args__ = (
+        CheckConstraint("monto >= 0", name="ck_pagos_compra_monto_nonnegative"),
+        CheckConstraint("descuento >= 0", name="ck_pagos_compra_descuento_nonnegative"),
+        CheckConstraint("monto + descuento > 0", name="ck_pagos_compra_aplicado_positive"),
+    )
     id = Column(Integer, primary_key=True)
     compra_id = Column(Integer, ForeignKey("compras.id", ondelete="CASCADE"), nullable=False, index=True)
     fecha = Column(DateTime, nullable=True, default=utc_now)
@@ -264,12 +320,18 @@ class PagoCompra(Base):
 
 class Configuracion(Base):
     __tablename__ = "configuracion"
+    __table_args__ = (
+        CheckConstraint("margen_venta_porcentaje >= 0 AND margen_venta_porcentaje <= 1000", name="ck_configuracion_margen_range"),
+    )
     id = Column(Integer, primary_key=True)
     margen_venta_porcentaje = Column(Numeric(8, 2), nullable=False, default=0)
 
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("rol IN ('admin', 'vendedor')", name="ck_users_rol_valid"),
+    )
     id = Column(Integer, primary_key=True)
     username = Column(String(60), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)

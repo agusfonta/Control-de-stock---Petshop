@@ -41,6 +41,7 @@ Consolidar el proyecto sin cambiar el comportamiento funcional sin una razón ex
 - [x] Fase 8: deployment — preparación del contenedor, migraciones al arranque, health check con DB y configuración segura de seed.
 - [x] Fase 9: cierre de producción — CORS configurable y actualización de configuración Pydantic.
 - [x] Fase 10: calidad y release — CI de backend/frontend y limpieza del paquete de entrega.
+- [x] Integridad de datos: CHECK constraints en DB, reflejadas en SQLAlchemy y verificadas con tests.
 
 ## Fase 4 — stock
 
@@ -116,9 +117,17 @@ Se agregó `.github/workflows/ci.yml` para validar automáticamente en `main` y 
 El paquete de entrega no incluye `__pycache__`, archivos `.pyc` ni bases locales generadas por ejecuciones anteriores.
 
 
+## Integridad de datos — base de datos
+
+SQLAlchemy sigue siendo el ORM de acceso a datos; no se reemplazó por SQL manual para las consultas normales. La integridad básica queda reforzada también en PostgreSQL mediante `CHECK`, además de los `PRIMARY KEY`, `UNIQUE`, `NOT NULL` y `FOREIGN KEY` ya existentes.
+
+Se agregaron restricciones para valores monetarios no negativos/positivos según el caso, stock y cantidades no negativas/positivas, descuentos válidos, pronto pago (días y porcentaje), margen configurable, saldo total no negativo, movimientos de caja/proveedor, pagos de compras y roles válidos. Las reglas transaccionales como "una venta no puede superar el stock disponible" siguen en la capa de servicio porque requieren lógica y bloqueo de filas.
+
+La migración `20260930_integrity_constraints` mantiene el modelo SQLAlchemy y el esquema de PostgreSQL alineados. Antes de aplicarla sobre una base de producción con datos heredados conviene revisar cualquier valor histórico fuera de estas reglas; si existe alguno, la migración debe detenerse y esos datos deben corregirse explícitamente, no normalizarse a ciegas.
+
 ## Cambios solicitados por la dueña
 
-- Ventas: un único bloque de pagos para uno o varios medios; transferencia y Mercado Pago se muestran como QR para nuevos registros. Valores legacy se conservan para datos históricos.
+- Ventas: un único bloque de pagos para uno o varios medios; transferencia y Mercado Pago se unifican como QR, incluidos los registros históricos existentes.
 - Clientes: mascotas opcionales (perro/gato y nombre), con soporte para varias mascotas por cliente.
 - Distribuidoras: pagos parciales, descuentos aplicados al pago y sugerencia de pronto pago configurable por proveedor.
 - Historial: resumen diario y mensual de entrada/salida.

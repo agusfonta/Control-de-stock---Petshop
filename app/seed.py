@@ -202,9 +202,9 @@ def main():
         crear_pedido(db, manana(11), C["diego.ramirez@mail.com"], MP.tarjeta,
                      [(P["PROPLAN-AD-15KG"], 1, "porcentaje", 10), (P["SHAMPOO-PULGAS-500ML"], 2, "ningun", 0)],
                      dto_tipo="porcentaje", dto_valor=5)
-        crear_pedido(db, manana(11), C["sofia.fernandez@mail.com"], MP.transferencia,
+        crear_pedido(db, manana(11), C["sofia.fernandez@mail.com"], MP.qr,
                      [(P["WHISKAS-GATO-10KG"], 1, "ningun", 0), (P["PIEDRA-GATO-4KG"], 2, "ningun", 0)])
-        crear_pedido(db, manana(12), C["martina.lopez@mail.com"], MP.mercadopago,
+        crear_pedido(db, manana(12), C["martina.lopez@mail.com"], MP.qr,
                      [(P["SOGA-DENTAL"], 1, "ningun", 0), (P["RATON-CATNIP"], 2, "ningun", 0),
                       (P["GALLETA-PERRO-1KG"], 1, "ningun", 0)],
                      dto_tipo="monto_fijo", dto_valor=2000)
@@ -215,9 +215,9 @@ def main():
                      [(P["SNACK-HUESO-500G"], 3, "monto_fijo", 500)])
         crear_pedido(db, manana(15), C["diego.ramirez@mail.com"], MP.efectivo,
                      [(P["ANTIPAR-10KG"], 1, "ningun", 0), (P["VIT-60C"], 1, "ningun", 0)])
-        crear_pedido(db, manana(16), C["valentina.sosa@mail.com"], MP.transferencia,
+        crear_pedido(db, manana(16), C["valentina.sosa@mail.com"], MP.qr,
                      [(P["RC-MINI-10KG"], 6, "ningun", 0)])  # deja stock 8/10 → stock bajo
-        crear_pedido(db, manana(17), C["pedro.gomez@mail.com"], MP.mercadopago,
+        crear_pedido(db, manana(17), C["pedro.gomez@mail.com"], MP.qr,
                      [(P["TRANSP-M"], 1, "ningun", 0), (P["PLATO-ACERO"], 1, "ningun", 0)])
         crear_pedido(db, manana(18), C["lucia.herrera@mail.com"], MP.efectivo,
                      [(P["TOALLITAS-50U"], 2, "ningun", 0), (P["SHAMPOO-PULGAS-500ML"], 1, "ningun", 0)])

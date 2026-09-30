@@ -300,7 +300,7 @@ def main() -> int:
             db.flush()
             return comp
 
-        add_compra(norte, "99001", [(a, 4)], entregada=True, pagada=True, medio=MP.transferencia)
+        add_compra(norte, "99001", [(a, 4)], entregada=True, pagada=True, medio=MP.qr)
         add_compra(mayo, "77010", [(b, 2)], entregada=False, pagada=False)
         add_compra(norte, "99120", [(c, 5)], entregada=True, pagada=False)
 

@@ -5,6 +5,7 @@ Revises: 20260930_money_numeric
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "20260930_business_requests"
 down_revision = "7f2b8d5c4e31"
@@ -15,7 +16,11 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute("ALTER TYPE metodopago ADD VALUE IF NOT EXISTS 'qr'")
+        # El enum metodopago ya existe desde la migración inicial. PostgreSQL
+        # requiere que la incorporación de un nuevo valor quede confirmada
+        # antes de poder usar ese valor en una misma migración.
+        with op.get_context().autocommit_block():
+            op.execute("ALTER TYPE metodopago ADD VALUE IF NOT EXISTS 'qr'")
 
     op.create_table(
         "mascotas",
@@ -36,7 +41,7 @@ def upgrade():
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("compra_id", sa.Integer(), nullable=False),
         sa.Column("fecha", sa.DateTime(), nullable=True),
-        sa.Column("medio", sa.Enum("efectivo", "tarjeta", "qr", "transferencia", "mercadopago", "debito", "credito", name="metodopago", create_type=False), nullable=False),
+        sa.Column("medio", postgresql.ENUM("efectivo", "tarjeta", "qr", "transferencia", "mercadopago", "debito", "credito", name="metodopago", create_type=False), nullable=False),
         sa.Column("monto", sa.Numeric(14, 2), nullable=False),
         sa.Column("descuento", sa.Numeric(14, 2), nullable=False),
         sa.ForeignKeyConstraint(["compra_id"], ["compras.id"], ondelete="CASCADE"),
@@ -56,6 +61,20 @@ def upgrade():
         sa.PrimaryKeyConstraint("id"),
     )
     op.execute("INSERT INTO configuracion (id, margen_venta_porcentaje) VALUES (1, 0)")
+
+    # La distinción transferencia/Mercado Pago ya no es necesaria para el
+    # negocio actual. Los registros históricos pasan a mostrarse como QR.
+    if bind.dialect.name == "postgresql":
+        op.execute("UPDATE pedidos SET metodo_pago = 'qr' WHERE CAST(metodo_pago AS TEXT) IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE pagos_pedido SET metodo = 'qr' WHERE CAST(metodo AS TEXT) IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE compras SET medio_pago = 'qr' WHERE CAST(medio_pago AS TEXT) IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE movimientos_caja SET medio = 'qr' WHERE CAST(medio AS TEXT) IN ('transferencia', 'mercadopago')")
+    else:
+        op.execute("UPDATE pedidos SET metodo_pago = 'qr' WHERE metodo_pago IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE pagos_pedido SET metodo = 'qr' WHERE metodo IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE compras SET medio_pago = 'qr' WHERE medio_pago IN ('transferencia', 'mercadopago')")
+        op.execute("UPDATE movimientos_caja SET medio = 'qr' WHERE medio IN ('transferencia', 'mercadopago')")
+
 
 
 def downgrade():

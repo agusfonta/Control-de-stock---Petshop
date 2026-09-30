@@ -47,7 +47,7 @@ function Caja() {
   const ordenados = [...movs].sort((a, b) => parseApiUtc(b.fecha) - parseApiUtc(a.fecha));
   const entradas = movs.filter(m => m.tipo === 'ENTRADA');
   const salidas = movs.filter(m => m.tipo === 'SALIDA');
-  const mediosConMov = [...MEDIOS_SEL.map(([v]) => v), 'transferencia', 'mercadopago', 'tarjeta'].filter(v => ((res?.por_medio?.[v]?.entrada || 0) > 0 || (res?.por_medio?.[v]?.salida || 0) > 0));
+  const mediosConMov = MEDIOS_SEL.map(([v]) => v).filter(v => ((res?.por_medio?.[v]?.entrada || 0) > 0 || (res?.por_medio?.[v]?.salida || 0) > 0));
   const ventasN = movs.filter(m => m.tipo === 'ENTRADA' && m.pedido_id && !String(m.descripcion || '').startsWith('Anulación')).length;
   const ticketProm = ventasN ? movs.filter(m => m.tipo === 'ENTRADA' && m.pedido_id).reduce((a, m) => a + (+m.monto || 0), 0) / ventasN : 0;
   const origenDe = m => m.pedido_id ? (String(m.descripcion || '').startsWith('Anulación') ? `anul. venta #${m.pedido_id}` : `venta #${m.pedido_id}`) : m.compra_id ? `compra #${m.compra_id}` : (m.automatico ? 'auto' : 'manual');
